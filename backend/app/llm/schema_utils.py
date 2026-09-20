@@ -1,9 +1,10 @@
 from copy import deepcopy
 from typing import Any
 
-# Tool の引数スキーマで使わないキー（LLM に渡しても意味がなく、
-# プロバイダによっては受け付けないため落とす）
-_DROPPED_KEYS = ("$defs", "definitions", "title")
+# JSON Schema の注釈のうち、Tool 定義に不要なキー。
+# ただし "properties" の中では **プロパティ名** なので落としてはいけない
+# （例: create_task の title を消すと LLM から引数が見えなくなる）。
+_DROPPED_ANNOTATIONS = ("$defs", "definitions", "title")
 
 
 def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
@@ -14,26 +15,31 @@ def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """
     definitions = schema.get("$defs", {})
 
-    def resolve(node: Any) -> Any:
+    def resolve(node: Any, *, keys_are_names: bool = False) -> Any:
         if isinstance(node, list):
             return [resolve(item) for item in node]
         if not isinstance(node, dict):
             return node
 
         if "$ref" in node:
-            ref: str = node["$ref"]
-            name = ref.rsplit("/", 1)[-1]
+            name = str(node["$ref"]).rsplit("/", 1)[-1]
             target = deepcopy(definitions.get(name, {}))
             # $ref と併記された description などは展開後も残す
-            extras = {k: v for k, v in node.items() if k != "$ref"}
+            extras = {key: value for key, value in node.items() if key != "$ref"}
             return resolve({**target, **extras})
 
-        return {
-            key: resolve(value)
-            for key, value in node.items()
-            if key not in _DROPPED_KEYS
-        }
+        resolved: dict[str, Any] = {}
+        for key, value in node.items():
+            if keys_are_names:
+                # ここでのキーはプロパティ名なので、名前で捨ててはいけない
+                resolved[key] = resolve(value)
+                continue
+            if key in _DROPPED_ANNOTATIONS:
+                continue
+            resolved[key] = resolve(value, keys_are_names=(key == "properties"))
 
-    resolved = resolve(schema)
-    assert isinstance(resolved, dict)
-    return resolved
+        return resolved
+
+    result = resolve(schema)
+    assert isinstance(result, dict)
+    return result

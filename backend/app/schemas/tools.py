@@ -62,3 +62,51 @@ class CompleteTaskArgs(BaseModel):
 
 class DeleteTaskArgs(BaseModel):
     task_id: int = Field(gt=0, description="削除するタスクのID")
+
+
+class CreateEventArgs(BaseModel):
+    title: str = Field(min_length=1, max_length=200, description="予定のタイトル")
+    start_at: AwareDatetime = Field(description=f"開始日時。{DATETIME_HINT}")
+    end_at: AwareDatetime = Field(description=f"終了日時。{DATETIME_HINT}")
+    description: str | None = Field(default=None, description="メモ")
+    location: str | None = Field(default=None, max_length=255, description="場所")
+    task_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="この予定がどのタスクの作業時間かを紐づける場合のタスクID",
+    )
+
+
+class GetEventArgs(BaseModel):
+    event_id: int = Field(gt=0, description="予定ID")
+
+
+class SearchEventsArgs(BaseModel):
+    period_start: AwareDatetime | None = Field(
+        default=None, description=f"検索する期間の開始日時。{DATETIME_HINT}"
+    )
+    period_end: AwareDatetime | None = Field(
+        default=None, description=f"検索する期間の終了日時。{DATETIME_HINT}"
+    )
+    keyword: str | None = Field(
+        default=None, max_length=200, description="タイトル・メモに含まれる語"
+    )
+    limit: int = Field(default=50, ge=1, le=200, description="最大件数")
+
+
+class UpdateEventArgs(BaseModel):
+    event_id: int = Field(gt=0, description="変更する予定のID")
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    start_at: AwareDatetime | None = Field(
+        default=None, description=f"新しい開始日時。{DATETIME_HINT}"
+    )
+    end_at: AwareDatetime | None = Field(
+        default=None, description=f"新しい終了日時。{DATETIME_HINT}"
+    )
+    description: str | None = None
+    location: str | None = Field(default=None, max_length=255)
+    task_id: int | None = Field(default=None, gt=0)
+
+
+class DeleteEventArgs(BaseModel):
+    event_id: int = Field(gt=0, description="削除する予定のID")

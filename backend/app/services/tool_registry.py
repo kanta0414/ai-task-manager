@@ -8,17 +8,25 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import AppError
 from app.llm.base import ToolCall, ToolSpec
 from app.llm.schema_utils import inline_refs
+from app.models.calendar_event import CalendarEvent
 from app.models.task import Task
 from app.models.user import User
+from app.schemas.event import EventCreate, EventSearchParams, EventUpdate
 from app.schemas.task import TaskCreate, TaskSearchParams, TaskUpdate
 from app.schemas.tools import (
     CompleteTaskArgs,
+    CreateEventArgs,
     CreateTaskArgs,
+    DeleteEventArgs,
     DeleteTaskArgs,
+    GetEventArgs,
     GetTaskArgs,
+    SearchEventsArgs,
     SearchTasksArgs,
+    UpdateEventArgs,
     UpdateTaskArgs,
 )
+from app.services.event_service import EventService
 from app.services.task_service import TaskService
 
 
@@ -67,6 +75,18 @@ def summarize_task(task: Task) -> dict[str, Any]:
     }
 
 
+def summarize_event(event: CalendarEvent) -> dict[str, Any]:
+    """LLM に返す最小限の表現。"""
+    return {
+        "id": event.id,
+        "title": event.title,
+        "start_at": event.start_at.isoformat(),
+        "end_at": event.end_at.isoformat(),
+        "location": event.location,
+        "task_id": event.task_id,
+    }
+
+
 class ToolRegistry:
     """LLM が実行できる操作の一覧と、その実行。
 
@@ -77,6 +97,7 @@ class ToolRegistry:
     def __init__(self, db: Session, user: User) -> None:
         self.user = user
         self.tasks = TaskService(db)
+        self.events = EventService(db)
         self._definitions = self._build_definitions()
 
     # ------------------------------------------------------------------ 定義
@@ -122,6 +143,44 @@ class ToolRegistry:
                 description="タスクを削除する。取り消せないためユーザーの確認が必要。",
                 args_model=DeleteTaskArgs,
                 handler=self._delete_task,
+                needs_confirmation=True,
+            ),
+            "create_event": ToolDefinition(
+                description=(
+                    "カレンダーに予定を作成する。"
+                    "「明日の14時から2時間〜を入れて」のような依頼に使う。"
+                    "タスクの作業時間を確保する場合は task_id を指定する。"
+                ),
+                args_model=CreateEventArgs,
+                handler=self._create_event,
+            ),
+            "get_event": ToolDefinition(
+                description="IDを指定して1件の予定を取得する。",
+                args_model=GetEventArgs,
+                handler=self._get_event,
+            ),
+            "search_events": ToolDefinition(
+                description=(
+                    "期間やキーワードで予定を検索する。"
+                    "「明日の予定を教えて」「今週の予定」などの質問や、"
+                    "変更・削除の対象を特定するために使う。"
+                    "指定期間に少しでも重なる予定が返る。"
+                ),
+                args_model=SearchEventsArgs,
+                handler=self._search_events,
+            ),
+            "update_event": ToolDefinition(
+                description=(
+                    "既存の予定を変更する。時間の移動やタイトル変更に使う。"
+                    "対象のIDが不明なときは先に search_events で特定する。"
+                ),
+                args_model=UpdateEventArgs,
+                handler=self._update_event,
+            ),
+            "delete_event": ToolDefinition(
+                description="予定を削除する。取り消せないためユーザーの確認が必要。",
+                args_model=DeleteEventArgs,
+                handler=self._delete_event,
                 needs_confirmation=True,
             ),
         }
@@ -175,6 +234,12 @@ class ToolRegistry:
             task = self.tasks.get(self.user, args.task_id)
             description = f"タスク「{task.title}」を削除します。"
             done_message = f"タスク「{task.title}」を削除しました。"
+        elif name == "delete_event":
+            assert isinstance(args, DeleteEventArgs)
+            event = self.events.get(self.user, args.event_id)
+            when = event.start_at.strftime("%-m/%-d %H:%M")
+            description = f"{when} の予定「{event.title}」を削除します。"
+            done_message = f"{when} の予定「{event.title}」を削除しました。"
         else:  # pragma: no cover - 新しい確認対象を追加したら必ずここも書く
             description = f"{name} を実行します。"
             done_message = f"{name} を実行しました。"
@@ -237,4 +302,43 @@ class ToolRegistry:
         self.tasks.delete(self.user, args.task_id)
         return ToolOutcome(
             {"deleted": True, "id": args.task_id, "title": title}, mutated=True
+        )
+
+    # ----------------------------------------------------- カレンダーの各ツール
+
+    def _create_event(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, CreateEventArgs)
+        event = self.events.create(self.user, EventCreate(**args.model_dump()))
+        return ToolOutcome(summarize_event(event), mutated=True)
+
+    def _get_event(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, GetEventArgs)
+        return ToolOutcome(summarize_event(self.events.get(self.user, args.event_id)))
+
+    def _search_events(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, SearchEventsArgs)
+        params = EventSearchParams(
+            from_=args.period_start,
+            to=args.period_end,
+            keyword=args.keyword,
+            limit=args.limit,
+        )
+        events = self.events.search(self.user, params)
+        return ToolOutcome(
+            {"count": len(events), "events": [summarize_event(e) for e in events]}
+        )
+
+    def _update_event(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, UpdateEventArgs)
+        changes = args.model_dump(exclude={"event_id"}, exclude_unset=True)
+        event = self.events.update(self.user, args.event_id, EventUpdate(**changes))
+        return ToolOutcome(summarize_event(event), mutated=True)
+
+    def _delete_event(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, DeleteEventArgs)
+        event = self.events.get(self.user, args.event_id)
+        title = event.title
+        self.events.delete(self.user, args.event_id)
+        return ToolOutcome(
+            {"deleted": True, "id": args.event_id, "title": title}, mutated=True
         )

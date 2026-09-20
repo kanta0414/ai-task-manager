@@ -1,19 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import { ApiError } from "@/lib/api";
-import { fetchChatStatus, sendChat } from "@/lib/chat";
-import type { ChatMessage, ChatStatus } from "@/types/chat";
+import { confirmAction, fetchChatStatus, sendChat } from "@/lib/chat";
+import { useEvents } from "@/store/EventsProvider";
+import { useTasks } from "@/store/TasksProvider";
+import type { ChatMessage, ChatResponse, ChatStatus, PendingAction } from "@/types/chat";
 
-const SUGGESTIONS = ["今日のタスクを教えて", "明日の予定を教えて"];
+const SUGGESTIONS = [
+  "今日のタスクを教えて",
+  "明日の14時から2時間、企業研究を入れて",
+];
 
 export function ChatPanel() {
+  const { refresh: refreshTasks } = useTasks();
+  const { refresh: refreshEvents } = useEvents();
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
 
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +42,31 @@ export function ChatPanel() {
   // 新しい発言が増えたら最下部へ
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [messages, sending]);
+  }, [messages, sending, pending]);
+
+  /** AI がデータを変更したら、通常UIの表示も合わせる。 */
+  const applyResponse = useCallback(
+    (response: ChatResponse) => {
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: response.reply },
+      ]);
+      setPending(response.pending_action);
+      if (response.mutated) {
+        void refreshTasks();
+        refreshEvents();
+      }
+    },
+    [refreshTasks, refreshEvents],
+  );
+
+  const handleFailure = (caught: unknown) => {
+    const detail =
+      caught instanceof ApiError
+        ? caught.message.replace(/^API \d+: /, "")
+        : "AI に接続できませんでした。";
+    setError(extractDetail(detail));
+  };
 
   const submit = async (text: string) => {
     const trimmed = text.trim();
@@ -37,22 +77,39 @@ export function ChatPanel() {
     setInput("");
     setSending(true);
     setError(null);
+    setPending(null);
 
     try {
-      const response = await sendChat(trimmed, history);
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: response.reply },
-      ]);
+      applyResponse(await sendChat(trimmed, history));
     } catch (caught) {
-      const detail =
-        caught instanceof ApiError
-          ? caught.message.replace(/^API \d+: /, "")
-          : "AI に接続できませんでした。";
-      setError(safeDetail(detail));
+      handleFailure(caught);
     } finally {
       setSending(false);
     }
+  };
+
+  const runPending = async () => {
+    if (!pending || sending) return;
+    setSending(true);
+    setError(null);
+    const action = pending;
+    setPending(null);
+
+    try {
+      applyResponse(await confirmAction(action));
+    } catch (caught) {
+      handleFailure(caught);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const cancelPending = () => {
+    setPending(null);
+    setMessages((current) => [
+      ...current,
+      { role: "assistant", content: "キャンセルしました。" },
+    ]);
   };
 
   const handleSubmit = (event: FormEvent) => {
@@ -86,8 +143,8 @@ export function ChatPanel() {
         </p>
       )}
 
-      <div ref={logRef} className="max-h-72 min-h-32 overflow-y-auto px-4 py-3">
-        {messages.length === 0 ? (
+      <div ref={logRef} className="max-h-80 min-h-32 overflow-y-auto px-4 py-3">
+        {messages.length === 0 && !pending ? (
           <div className="py-6 text-center text-sm text-muted">
             <p>タスクや予定について話しかけてください。</p>
             <div className="mt-3 flex flex-wrap justify-center gap-2">
@@ -124,6 +181,34 @@ export function ChatPanel() {
             {sending && (
               <li className="text-left text-sm text-muted">考えています...</li>
             )}
+            {pending && (
+              <li>
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
+                  <p className="text-sm text-amber-900 dark:text-amber-100">
+                    {pending.description}
+                  </p>
+                  <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                    この操作は取り消せません。実行してよいですか？
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void runPending()}
+                      className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+                    >
+                      実行
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelPending}
+                      className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs hover:bg-background"
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -154,7 +239,7 @@ export function ChatPanel() {
 }
 
 /** Backend が返した JSON のエラー本文から、表示用の文言を取り出す。 */
-function safeDetail(raw: string): string {
+function extractDetail(raw: string): string {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (

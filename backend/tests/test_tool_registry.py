@@ -18,14 +18,19 @@ def call(name: str, **arguments) -> ToolCall:
 
 def test_specs_cover_mvp_task_tools(registry: ToolRegistry) -> None:
     names = {spec.name for spec in registry.specs()}
-    assert names == {
+    assert {
         "create_task",
         "get_task",
         "search_tasks",
         "update_task",
         "complete_task",
         "delete_task",
-    }
+    } <= names
+
+
+def test_tool_count_stays_small(registry: ToolRegistry) -> None:
+    """Tool が増えすぎると LLM の選択精度が落ちるため、MVP では11個に抑える。"""
+    assert len(registry.specs()) == 11
 
 
 def test_specs_have_no_json_schema_refs(registry: ToolRegistry) -> None:
@@ -155,3 +160,136 @@ def test_tools_cannot_touch_other_users_data(
     assert registry.execute(call("update_task", task_id=task.id, title="x")).is_error is True
     assert registry.execute(call("delete_task", task_id=task.id)).is_error is True
     assert registry.execute(call("search_tasks")).content["count"] == 0
+
+
+# ------------------------------------------------------------ カレンダーの Tool
+
+
+def test_specs_cover_mvp_calendar_tools(registry: ToolRegistry) -> None:
+    names = {spec.name for spec in registry.specs()}
+    assert {
+        "create_event",
+        "get_event",
+        "search_events",
+        "update_event",
+        "delete_event",
+    } <= names
+
+
+def test_create_event(registry: ToolRegistry) -> None:
+    outcome = registry.execute(
+        call(
+            "create_event",
+            title="企業研究",
+            start_at="2026-09-21T14:00",
+            end_at="2026-09-21T16:00",
+        )
+    )
+
+    assert outcome.mutated is True
+    assert outcome.content["start_at"] == "2026-09-21T14:00:00+09:00"
+    assert outcome.content["end_at"] == "2026-09-21T16:00:00+09:00"
+
+
+def test_create_event_rejects_inverted_period(registry: ToolRegistry) -> None:
+    """LLM が終了を開始より前に出しても Service のルールで弾かれる。"""
+    outcome = registry.execute(
+        call(
+            "create_event",
+            title="逆転",
+            start_at="2026-09-21T16:00",
+            end_at="2026-09-21T14:00",
+        )
+    )
+    assert outcome.is_error is True
+    assert "終了時刻" in outcome.content["error"]
+
+
+def test_create_event_linked_to_task(registry: ToolRegistry) -> None:
+    task = registry.execute(call("create_task", title="企業研究")).content
+
+    outcome = registry.execute(
+        call(
+            "create_event",
+            title="企業研究",
+            start_at="2026-09-21T14:00",
+            end_at="2026-09-21T16:00",
+            task_id=task["id"],
+        )
+    )
+    assert outcome.content["task_id"] == task["id"]
+
+
+def test_search_events_returns_overlapping(registry: ToolRegistry) -> None:
+    registry.execute(
+        call("create_event", title="またぎ", start_at="2026-09-21T23:00", end_at="2026-09-22T01:00")
+    )
+    registry.execute(
+        call("create_event", title="範囲外", start_at="2026-09-25T10:00", end_at="2026-09-25T11:00")
+    )
+
+    outcome = registry.execute(
+        call("search_events", period_start="2026-09-22T00:00", period_end="2026-09-23T00:00")
+    )
+    assert [e["title"] for e in outcome.content["events"]] == ["またぎ"]
+
+
+def test_update_event_moves_time(registry: ToolRegistry) -> None:
+    created = registry.execute(
+        call("create_event", title="企業研究", start_at="2026-09-21T14:00", end_at="2026-09-21T16:00")
+    ).content
+
+    outcome = registry.execute(
+        call(
+            "update_event",
+            event_id=created["id"],
+            start_at="2026-09-21T18:00",
+            end_at="2026-09-21T20:00",
+        )
+    )
+    assert outcome.content["start_at"] == "2026-09-21T18:00:00+09:00"
+
+
+def test_delete_event_requires_confirmation(registry: ToolRegistry) -> None:
+    created = registry.execute(
+        call("create_event", title="面接", start_at="2026-09-21T09:00", end_at="2026-09-21T10:00")
+    ).content
+
+    outcome = registry.execute(call("delete_event", event_id=created["id"]))
+
+    assert outcome.pending is not None
+    assert "面接" in outcome.pending.description
+    assert "9/21 09:00" in outcome.pending.description
+    assert registry.execute(call("get_event", event_id=created["id"])).is_error is False
+
+
+def test_delete_event_executes_after_confirmation(registry: ToolRegistry) -> None:
+    created = registry.execute(
+        call("create_event", title="面接", start_at="2026-09-21T09:00", end_at="2026-09-21T10:00")
+    ).content
+
+    outcome = registry.execute(call("delete_event", event_id=created["id"]), confirmed=True)
+
+    assert outcome.content["deleted"] is True
+    assert registry.execute(call("get_event", event_id=created["id"])).is_error is True
+
+
+def test_required_arguments_are_visible_to_the_model(registry: ToolRegistry) -> None:
+    """必須引数がスキーマに含まれていること。
+
+    ここが欠けると LLM は引数を組み立てられず、Tool Calling が成立しない。
+    """
+    specs = {spec.name: spec.input_schema for spec in registry.specs()}
+
+    assert "title" in specs["create_task"]["properties"]
+    assert specs["create_task"]["required"] == ["title"]
+
+    event_properties = specs["create_event"]["properties"]
+    assert {"title", "start_at", "end_at"} <= set(event_properties)
+    assert set(specs["create_event"]["required"]) == {"title", "start_at", "end_at"}
+
+    # すべてのツールで required が properties に含まれていること
+    for name, schema in specs.items():
+        properties = set(schema.get("properties", {}))
+        missing = set(schema.get("required", [])) - properties
+        assert not missing, f"{name} の必須引数 {missing} がスキーマに無い"

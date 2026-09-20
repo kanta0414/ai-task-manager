@@ -131,3 +131,29 @@ def test_inline_refs_expands_definitions() -> None:
         },
         "type": "object",
     }
+
+
+def test_inline_refs_keeps_a_property_named_title() -> None:
+    """"title" は JSON Schema の注釈でもあるが、プロパティ名なら残す。
+
+    ここを落とすと LLM から create_task の title 引数が見えなくなる。
+    """
+    schema = {
+        "title": "CreateTaskArgs",
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "title": "Title", "description": "タイトル"},
+            "priority": {"type": "string"},
+        },
+        "required": ["title"],
+    }
+
+    resolved = inline_refs(schema)
+
+    assert set(resolved["properties"]) == {"title", "priority"}
+    # プロパティの中身にある注釈としての title は落とす
+    assert resolved["properties"]["title"] == {
+        "type": "string",
+        "description": "タイトル",
+    }
+    assert "title" not in resolved  # スキーマ自体の注釈は落とす
