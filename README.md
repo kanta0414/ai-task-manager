@@ -26,6 +26,7 @@ LLM (Tool Calling)┘
 ```bash
 # 1. DB（ローカル PostgreSQL を使う場合）
 createdb ai_task_manager
+createdb ai_task_manager_test   # テスト用
 
 # 2. Backend
 cd backend

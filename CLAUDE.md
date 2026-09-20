@@ -38,7 +38,8 @@ cd backend
 ./.venv/bin/uvicorn app.main:app --reload --port 8000   # 起動 → http://localhost:8000/docs
 ./.venv/bin/alembic revision --autogenerate -m "message" # マイグレーション作成
 ./.venv/bin/alembic upgrade head                         # 適用
-./.venv/bin/python -m pytest -q                          # テスト
+./.venv/bin/alembic check                                # モデルとマイグレーションの差分検出
+./.venv/bin/python -m pytest -q                          # テスト（要 createdb ai_task_manager_test）
 
 # Frontend
 cd frontend
@@ -48,13 +49,15 @@ npm run build   # 型チェック込みのビルド確認
 
 DB: ローカル Homebrew PostgreSQL（`ai_task_manager` / ユーザー `kanta` / 5432）。
 Docker を使う場合は `docker compose up -d db`（5433、`.env` の DATABASE_URL を切替）。
+テストは開発用DBを壊さないよう `ai_task_manager_test` に対して実行する。
 
 ## コーディング規約
 
 - Backend: 型ヒント必須。SQLAlchemy 2.0 の `Mapped[...]` スタイル。日時は timezone-aware (JST/UTC を混ぜない)。
 - Frontend: API 呼び出しは `src/lib/api.ts` 経由に統一。`any` 禁止。
 - 命名は英語、コメント・UI文言は日本語。
-- 新しいテーブルを足したら必ず Alembic のマイグレーションも作る。
+- 新しいテーブルを足したら必ず Alembic のマイグレーションも作り、`app/models/__init__.py` に追記する
+  （autogenerate の対象になるため）。ENUM を含むテーブルは downgrade で型の drop も書く。
 
 ## セキュリティ
 
@@ -64,7 +67,7 @@ Docker を使う場合は `docker compose up -d db`（5433、`.env` の DATABASE
 ## 進捗
 
 - [x] Phase 0 開発環境構築（Next.js / FastAPI / PostgreSQL 接続確認済み）
-- [ ] Phase 1 データモデル（users / tasks / calendar_events）
+- [x] Phase 1 データモデル（users / tasks / calendar_events）
 - [ ] Phase 2 CRUD API
 - [ ] Phase 3 タスクUI
 - [ ] Phase 4 カレンダーUI ← ここで「LLMなしでも完成したアプリ」
