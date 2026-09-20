@@ -68,11 +68,13 @@ GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
 src/types/      API のレスポンス型（TaskRead などと1対1）
 src/lib/        api.ts(共通fetch) / tasks.ts(API呼び出し) / datetime.ts(JST整形)
 src/store/      TasksProvider … 取得・更新・フィルタの状態を集約
-src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters) ui/(Modal,ConfirmDialog)
+src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
+                calendar/(WeekCalendar,EventForm) ui/(Modal,ConfirmDialog)
 ```
 
-- データ取得・更新は `TasksProvider` の中だけで行い、コンポーネントは `useTasks()` を使う。
-  AI アシスタントが操作した結果も `refresh()` でこの状態に反映する（Phase 5 以降）。
+- データ取得・更新は `TasksProvider` / `EventsProvider` の中だけで行い、コンポーネントは
+  `useTasks()` / `useEvents()` を使う。AI アシスタントが操作した結果も `refresh()` で反映する（Phase 5 以降）。
+- カレンダーの座標計算は `src/lib/calendarLayout.ts`（重なりの列割り当て・日またぎの切り詰め）。
 - 日時入力は `<input type="datetime-local">` の値（オフセット無し）をそのまま送り、
   Backend 側で Asia/Tokyo として解釈させる。フロントでタイムゾーン変換しない。
 
@@ -100,6 +102,6 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters) ui/(Modal,Confir
 - [x] Phase 1 データモデル（users / tasks / calendar_events）
 - [x] Phase 2 CRUD API（Task / Calendar）
 - [x] Phase 3 タスクUI
-- [ ] Phase 4 カレンダーUI ← ここで「LLMなしでも完成したアプリ」
+- [x] Phase 4 カレンダーUI ← **Milestone 1: LLMなしで完成したタスク管理アプリ**
 - [ ] Phase 5 LLM基盤 / Phase 6 Tool Calling / Phase 7-8 自然言語CRUD
 - [ ] Phase 9 会話コンテキスト / Phase 10-12 複数Tool連携・空き時間・自動スケジューリング
