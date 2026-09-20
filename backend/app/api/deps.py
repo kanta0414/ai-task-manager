@@ -4,7 +4,9 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.llm.factory import get_llm_provider
 from app.models.user import User
+from app.services.chat_service import ChatService
 from app.services.event_service import EventService
 from app.services.task_service import TaskService
 from app.services.user_service import get_or_create_default_user
@@ -35,3 +37,10 @@ def get_event_service(db: DbSession) -> EventService:
 
 
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
+
+
+def get_chat_service() -> ChatService:
+    return ChatService(get_llm_provider())
+
+
+ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]

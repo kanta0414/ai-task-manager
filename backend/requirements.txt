@@ -13,5 +13,6 @@ alembic==1.16.5
 pytest==8.4.2
 httpx==0.28.1
 
-# --- LLM (Phase 5 以降で使用) ---
-# anthropic==0.69.0
+# --- LLM ---
+# Claude API 用の公式SDK。既定では呼び出さない（LLM_PROVIDER=ollama）
+anthropic==1.7.0

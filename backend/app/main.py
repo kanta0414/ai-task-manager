@@ -2,9 +2,14 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import events, health, tasks
+from app.api.routers import chat, events, health, tasks
 from app.core.config import get_settings
-from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.core.exceptions import (
+    BusinessRuleError,
+    LLMError,
+    LLMUnavailableError,
+    NotFoundError,
+)
 
 settings = get_settings()
 
@@ -28,6 +33,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(tasks.router)
 app.include_router(events.router)
+app.include_router(chat.router)
 
 
 # Service Layer のドメイン例外を HTTP へ変換する。
@@ -40,6 +46,16 @@ def handle_not_found(request: Request, exc: NotFoundError) -> JSONResponse:
 @app.exception_handler(BusinessRuleError)
 def handle_business_rule(request: Request, exc: BusinessRuleError) -> JSONResponse:
     return JSONResponse(status_code=422, content={"detail": exc.message})
+
+
+@app.exception_handler(LLMUnavailableError)
+def handle_llm_unavailable(request: Request, exc: LLMUnavailableError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": exc.message})
+
+
+@app.exception_handler(LLMError)
+def handle_llm_error(request: Request, exc: LLMError) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": exc.message})
 
 
 @app.get("/")

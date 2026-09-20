@@ -62,7 +62,24 @@ GET    /tasks/{id}         PATCH /tasks/{id}      DELETE /tasks/{id}
 POST   /tasks/{id}/complete , /tasks/{id}/reopen
 POST   /events             GET /events（from/to/keyword/task_id/order/limit/offset）
 GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
+POST   /chat               GET /chat/status
 ```
+
+## LLM
+
+```
+app/llm/base.py     LLMProvider（抽象）/ ChatMessage / ChatResult
+app/llm/ollama.py   OllamaProvider … 既定。ローカル実行で課金なし
+app/llm/claude.py   ClaudeProvider … 呼ぶと従量課金。LLM_PROVIDER=claude のときだけ使う
+app/llm/factory.py  設定からプロバイダを選ぶ唯一の場所
+```
+
+- **既定は `LLM_PROVIDER=ollama`。** Claude へ切り替えると Anthropic API の従量課金が発生する。
+- システムプロンプト（`app/services/chat_service.py`）には**現在日時とタイムゾーンを必ず含める**。
+  「明日の14時」の解釈がここに依存する。
+- Anthropic SDK は公式の `anthropic` パッケージを使う。例外は
+  AuthenticationError → NotFoundError → RateLimitError → APIStatusError → APIConnectionError
+  の順に個別に捕捉し、`LLMUnavailableError`(503) / `LLMError`(502) に変換する。
 
 ## Frontend 構成
 
@@ -105,5 +122,6 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 2 CRUD API（Task / Calendar）
 - [x] Phase 3 タスクUI
 - [x] Phase 4 カレンダーUI ← **Milestone 1: LLMなしで完成したタスク管理アプリ**
-- [ ] Phase 5 LLM基盤 / Phase 6 Tool Calling / Phase 7-8 自然言語CRUD
+- [x] Phase 5 LLM基盤（Provider抽象化 / POST /chat / AIチャットUI）※実LLM未接続
+- [ ] Phase 6 Tool Calling / Phase 7-8 自然言語CRUD
 - [ ] Phase 9 会話コンテキスト / Phase 10-12 複数Tool連携・空き時間・自動スケジューリング

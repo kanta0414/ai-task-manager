@@ -22,3 +22,11 @@ class NotFoundError(AppError):
 
 class BusinessRuleError(AppError):
     """業務ルール違反（例: 終了時刻が開始時刻より前）。"""
+
+
+class LLMError(AppError):
+    """LLM 呼び出しに関する失敗。"""
+
+
+class LLMUnavailableError(LLMError):
+    """LLM に接続できない（未起動・APIキー未設定・ネットワーク断など）。"""

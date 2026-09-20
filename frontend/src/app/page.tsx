@@ -1,4 +1,5 @@
 import { WeekCalendar } from "@/components/calendar/WeekCalendar";
+import { ChatPanel } from "@/components/chat/ChatPanel";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { EventsProvider } from "@/store/EventsProvider";
 import { TasksProvider } from "@/store/TasksProvider";
@@ -13,15 +14,17 @@ export default function Home() {
         </p>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
-        <TasksProvider>
-          <TaskBoard />
-        </TasksProvider>
-
+      {/* AI が操作した結果をタスク一覧とカレンダーへ反映できるよう、
+          チャットも同じ Provider の内側に置く（Phase 6 で refresh を呼ぶ） */}
+      <TasksProvider>
         <EventsProvider>
-          <WeekCalendar />
+          <div className="grid gap-8 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
+            <TaskBoard />
+            <WeekCalendar />
+          </div>
+          <ChatPanel />
         </EventsProvider>
-      </div>
+      </TasksProvider>
     </div>
   );
 }

@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     default_user_email: str = "owner@example.com"
     default_user_name: str = "Owner"
 
-    # LLM (Phase 5 以降)
-    llm_provider: str = "claude"
+    # LLM。既定はローカルの Ollama（API料金が発生しない）
+    llm_provider: str = "ollama"
     anthropic_api_key: str = ""
-    claude_model: str = "claude-sonnet-5"
+    claude_model: str = "claude-opus-5"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b"
 
