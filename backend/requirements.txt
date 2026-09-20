@@ -1,0 +1,17 @@
+# --- Web framework ---
+fastapi==0.118.0
+uvicorn[standard]==0.37.0
+pydantic==2.11.9
+pydantic-settings==2.11.0
+
+# --- Database ---
+SQLAlchemy==2.0.43
+psycopg[binary]==3.2.10
+alembic==1.16.5
+
+# --- Test ---
+pytest==8.4.2
+httpx==0.28.1
+
+# --- LLM (Phase 5 以降で使用) ---
+# anthropic==0.69.0

@@ -1,0 +1,29 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: aitm-db
+    environment:
+      POSTGRES_USER: aitm
+      POSTGRES_PASSWORD: aitm
+      POSTGRES_DB: ai_task_manager
+      TZ: Asia/Tokyo
+    # ローカルの Homebrew PostgreSQL (5432) と衝突しないよう 5433 を使用
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aitm -d ai_task_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Phase 15 (Celery/リマインダー) で使用。今は起動しても害はない。
+  redis:
+    image: redis:7-alpine
+    container_name: aitm-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
