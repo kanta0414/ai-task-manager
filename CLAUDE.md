@@ -72,7 +72,18 @@ app/llm/base.py     LLMProvider（抽象）/ ChatMessage / ChatResult
 app/llm/ollama.py   OllamaProvider … 既定。ローカル実行で課金なし
 app/llm/claude.py   ClaudeProvider … 呼ぶと従量課金。LLM_PROVIDER=claude のときだけ使う
 app/llm/factory.py  設定からプロバイダを選ぶ唯一の場所
+app/llm/schema_utils.py  Pydantic の $ref を展開（プロバイダが解釈できないため）
+app/services/tool_registry.py  LLM が実行できる操作の定義と実行
+app/schemas/tools.py          Tool 引数の検証スキーマ
 ```
+
+### Tool Calling
+
+- Tool は `ToolRegistry` にまとめ、**必ず既存の Service を呼ぶ**（新たなDBアクセスを書かない）。
+- 引数は Pydantic で検証し、不正なら例外にせず `{"error": ...}` を LLM に返して修正させる。
+- 削除など取り消せない操作は `needs_confirmation=True`。実行せず `pending_action` を返し、
+  ユーザーが承認したら `POST /chat/confirm` で実行する（引数はそこで再検証する）。
+- エージェントループは最大 5 往復（`MAX_TOOL_ITERATIONS`）。
 
 - **既定は `LLM_PROVIDER=ollama`。** Claude へ切り替えると Anthropic API の従量課金が発生する。
 - システムプロンプト（`app/services/chat_service.py`）には**現在日時とタイムゾーンを必ず含める**。
@@ -123,5 +134,6 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 3 タスクUI
 - [x] Phase 4 カレンダーUI ← **Milestone 1: LLMなしで完成したタスク管理アプリ**
 - [x] Phase 5 LLM基盤（Provider抽象化 / POST /chat / AIチャットUI）※実LLM未接続
-- [ ] Phase 6 Tool Calling / Phase 7-8 自然言語CRUD
+- [x] Phase 6a Tool Calling 基盤 + Task Tool 6種（実LLM未接続・FakeProviderで検証）
+- [ ] Phase 6b Calendar Tool / 確認UI
 - [ ] Phase 9 会話コンテキスト / Phase 10-12 複数Tool連携・空き時間・自動スケジューリング
