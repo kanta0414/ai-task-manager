@@ -1,0 +1,76 @@
+from fastapi import APIRouter, Query, status
+
+from app.api.deps import CurrentUser, TaskServiceDep
+from app.models.enums import TaskStatus
+from app.models.task import Task
+from app.schemas.common import AwareDatetime
+from app.schemas.task import (
+    SortOrder,
+    TaskCreate,
+    TaskRead,
+    TaskSearchParams,
+    TaskSortField,
+    TaskUpdate,
+)
+
+router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+@router.post("", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
+def create_task(
+    payload: TaskCreate, user: CurrentUser, service: TaskServiceDep
+) -> Task:
+    return service.create(user, payload)
+
+
+@router.get("", response_model=list[TaskRead])
+def search_tasks(
+    user: CurrentUser,
+    service: TaskServiceDep,
+    status_: list[TaskStatus] | None = Query(default=None, alias="status"),
+    keyword: str | None = Query(default=None, description="タイトル・説明の部分一致"),
+    due_from: AwareDatetime | None = None,
+    due_to: AwareDatetime | None = None,
+    sort_by: TaskSortField = TaskSortField.DUE_DATE,
+    order: SortOrder = SortOrder.ASC,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[Task]:
+    params = TaskSearchParams(
+        statuses=status_,
+        keyword=keyword,
+        due_from=due_from,
+        due_to=due_to,
+        sort_by=sort_by,
+        order=order,
+        limit=limit,
+        offset=offset,
+    )
+    return service.search(user, params)
+
+
+@router.get("/{task_id}", response_model=TaskRead)
+def get_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
+    return service.get(user, task_id)
+
+
+@router.patch("/{task_id}", response_model=TaskRead)
+def update_task(
+    task_id: int, payload: TaskUpdate, user: CurrentUser, service: TaskServiceDep
+) -> Task:
+    return service.update(user, task_id, payload)
+
+
+@router.post("/{task_id}/complete", response_model=TaskRead)
+def complete_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
+    return service.complete(user, task_id)
+
+
+@router.post("/{task_id}/reopen", response_model=TaskRead)
+def reopen_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
+    return service.reopen(user, task_id)
+
+
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> None:
+    service.delete(user, task_id)

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://kanta@localhost:5432/ai_task_manager"
     cors_origins: str = "http://localhost:3000"
 
+    # 認証導入前の既定ユーザー（Phase 16 で置き換える）
+    default_user_email: str = "owner@example.com"
+    default_user_name: str = "Owner"
+
     # LLM (Phase 5 以降)
     llm_provider: str = "claude"
     anthropic_api_key: str = ""

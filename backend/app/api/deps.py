@@ -1,0 +1,29 @@
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
+from app.models.user import User
+from app.services.task_service import TaskService
+from app.services.user_service import get_or_create_default_user
+
+DbSession = Annotated[Session, Depends(get_db)]
+
+
+def get_current_user(db: DbSession) -> User:
+    """現在のユーザーを返す唯一の入口。
+
+    Phase 16 で認証を入れる際は、この関数だけを JWT 等の実装に差し替える。
+    """
+    return get_or_create_default_user(db)
+
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_task_service(db: DbSession) -> TaskService:
+    return TaskService(db)
+
+
+TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
