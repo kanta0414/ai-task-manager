@@ -60,6 +60,7 @@ class TaskSearchParams(BaseModel):
     """一覧・検索の条件。LLM の search_tasks Tool でもそのまま使う。"""
 
     statuses: list[TaskStatus] | None = None
+    priorities: list[TaskPriority] | None = None
     keyword: str | None = Field(default=None, max_length=200)
     due_from: AwareDatetime | None = None
     due_to: AwareDatetime | None = None

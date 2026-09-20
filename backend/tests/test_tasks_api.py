@@ -198,3 +198,12 @@ def test_completed_at_is_recent(client: TestClient) -> None:
     done = client.post(f"/tasks/{created['id']}/complete").json()
     completed_at = datetime.fromisoformat(done["completed_at"])
     assert datetime.now(UTC) - completed_at < timedelta(minutes=1)
+
+
+def test_search_filters_by_priority(client: TestClient) -> None:
+    _create(client, title="高", priority="high")
+    _create(client, title="中", priority="medium")
+    _create(client, title="低", priority="low")
+
+    found = client.get("/tasks", params={"priority": ["high", "medium"]}).json()
+    assert sorted(t["title"] for t in found) == ["中", "高"]

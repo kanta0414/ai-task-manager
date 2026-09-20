@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, TaskServiceDep
-from app.models.enums import TaskStatus
+from app.models.enums import TaskPriority, TaskStatus
 from app.models.task import Task
 from app.schemas.common import AwareDatetime
 from app.schemas.task import (
@@ -28,6 +28,7 @@ def search_tasks(
     user: CurrentUser,
     service: TaskServiceDep,
     status_: list[TaskStatus] | None = Query(default=None, alias="status"),
+    priority: list[TaskPriority] | None = Query(default=None),
     keyword: str | None = Query(default=None, description="タイトル・説明の部分一致"),
     due_from: AwareDatetime | None = None,
     due_to: AwareDatetime | None = None,
@@ -38,6 +39,7 @@ def search_tasks(
 ) -> list[Task]:
     params = TaskSearchParams(
         statuses=status_,
+        priorities=priority,
         keyword=keyword,
         due_from=due_from,
         due_to=due_to,

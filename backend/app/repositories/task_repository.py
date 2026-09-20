@@ -26,6 +26,8 @@ class TaskRepository:
 
         if params.statuses:
             stmt = stmt.where(Task.status.in_(params.statuses))
+        if params.priorities:
+            stmt = stmt.where(Task.priority.in_(params.priorities))
         if params.keyword:
             pattern = f"%{params.keyword}%"
             stmt = stmt.where(

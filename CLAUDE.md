@@ -62,6 +62,20 @@ POST   /events             GET /events（from/to/keyword/task_id/order/limit/off
 GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
 ```
 
+## Frontend 構成
+
+```
+src/types/      API のレスポンス型（TaskRead などと1対1）
+src/lib/        api.ts(共通fetch) / tasks.ts(API呼び出し) / datetime.ts(JST整形)
+src/store/      TasksProvider … 取得・更新・フィルタの状態を集約
+src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters) ui/(Modal,ConfirmDialog)
+```
+
+- データ取得・更新は `TasksProvider` の中だけで行い、コンポーネントは `useTasks()` を使う。
+  AI アシスタントが操作した結果も `refresh()` でこの状態に反映する（Phase 5 以降）。
+- 日時入力は `<input type="datetime-local">` の値（オフセット無し）をそのまま送り、
+  Backend 側で Asia/Tokyo として解釈させる。フロントでタイムゾーン変換しない。
+
 - 「現在のユーザー」は `app/api/deps.py` の `get_current_user` のみが決める（Phase 16 で認証へ差し替え）。
 - Service はドメイン例外（`NotFoundError` / `BusinessRuleError`）を投げ、`main.py` の
   exception handler が HTTP へ変換する。**Service で HTTPException を使わない**。
@@ -85,7 +99,7 @@ GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
 - [x] Phase 0 開発環境構築（Next.js / FastAPI / PostgreSQL 接続確認済み）
 - [x] Phase 1 データモデル（users / tasks / calendar_events）
 - [x] Phase 2 CRUD API（Task / Calendar）
-- [ ] Phase 3 タスクUI
+- [x] Phase 3 タスクUI
 - [ ] Phase 4 カレンダーUI ← ここで「LLMなしでも完成したアプリ」
 - [ ] Phase 5 LLM基盤 / Phase 6 Tool Calling / Phase 7-8 自然言語CRUD
 - [ ] Phase 9 会話コンテキスト / Phase 10-12 複数Tool連携・空き時間・自動スケジューリング
