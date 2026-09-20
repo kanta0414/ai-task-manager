@@ -45,6 +45,8 @@ cd backend
 cd frontend
 npm run dev     # http://localhost:3000
 npm run build   # 型チェック込みのビルド確認
+npm test        # Vitest（日時・カレンダー配置などのロジック）
+npx eslint src --max-warnings=0
 ```
 
 DB: ローカル Homebrew PostgreSQL（`ai_task_manager` / ユーザー `kanta` / 5432）。
