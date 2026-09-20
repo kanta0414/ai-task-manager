@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.user import User
+from app.services.event_service import EventService
 from app.services.task_service import TaskService
 from app.services.user_service import get_or_create_default_user
 
@@ -27,3 +28,10 @@ def get_task_service(db: DbSession) -> TaskService:
 
 
 TaskServiceDep = Annotated[TaskService, Depends(get_task_service)]
+
+
+def get_event_service(db: DbSession) -> EventService:
+    return EventService(db)
+
+
+EventServiceDep = Annotated[EventService, Depends(get_event_service)]

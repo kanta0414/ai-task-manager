@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import health, tasks
+from app.api.routers import events, health, tasks
 from app.core.config import get_settings
 from app.core.exceptions import BusinessRuleError, NotFoundError
 
@@ -27,6 +27,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(tasks.router)
+app.include_router(events.router)
 
 
 # Service Layer のドメイン例外を HTTP へ変換する。

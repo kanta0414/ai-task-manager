@@ -51,6 +51,22 @@ DB: ローカル Homebrew PostgreSQL（`ai_task_manager` / ユーザー `kanta` 
 Docker を使う場合は `docker compose up -d db`（5433、`.env` の DATABASE_URL を切替）。
 テストは開発用DBを壊さないよう `ai_task_manager_test` に対して実行する。
 
+## 既存API
+
+```
+GET    /health , /health/db
+POST   /tasks              GET /tasks（status/keyword/due_from/due_to/sort_by/order/limit/offset）
+GET    /tasks/{id}         PATCH /tasks/{id}      DELETE /tasks/{id}
+POST   /tasks/{id}/complete , /tasks/{id}/reopen
+POST   /events             GET /events（from/to/keyword/task_id/order/limit/offset）
+GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
+```
+
+- 「現在のユーザー」は `app/api/deps.py` の `get_current_user` のみが決める（Phase 16 で認証へ差し替え）。
+- Service はドメイン例外（`NotFoundError` / `BusinessRuleError`）を投げ、`main.py` の
+  exception handler が HTTP へ変換する。**Service で HTTPException を使わない**。
+- 日時は `app/schemas/common.py` の `AwareDatetime` を使う（naive は Asia/Tokyo として解釈）。
+
 ## コーディング規約
 
 - Backend: 型ヒント必須。SQLAlchemy 2.0 の `Mapped[...]` スタイル。日時は timezone-aware (JST/UTC を混ぜない)。
@@ -68,7 +84,7 @@ Docker を使う場合は `docker compose up -d db`（5433、`.env` の DATABASE
 
 - [x] Phase 0 開発環境構築（Next.js / FastAPI / PostgreSQL 接続確認済み）
 - [x] Phase 1 データモデル（users / tasks / calendar_events）
-- [ ] Phase 2 CRUD API
+- [x] Phase 2 CRUD API（Task / Calendar）
 - [ ] Phase 3 タスクUI
 - [ ] Phase 4 カレンダーUI ← ここで「LLMなしでも完成したアプリ」
 - [ ] Phase 5 LLM基盤 / Phase 6 Tool Calling / Phase 7-8 自然言語CRUD
