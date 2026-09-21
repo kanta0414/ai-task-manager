@@ -47,12 +47,13 @@ cd backend
 ./.venv/bin/alembic upgrade head                         # 適用
 ./.venv/bin/alembic check                                # モデルとマイグレーションの差分検出
 ./.venv/bin/python -m pytest -q                          # テスト（要 createdb ai_task_manager_test）
+./.venv/bin/python -m pytest -m llm -v                   # LLM の Tool 選択評価（実LLMを呼ぶ）
 
 # Frontend
 cd frontend
 npm run dev     # http://localhost:3000
 npm run build   # 型チェック込みのビルド確認
-npm test        # Vitest（日時・カレンダー配置などのロジック）
+npm test        # Vitest（ロジック + コンポーネント）
 npx eslint src --max-warnings=0
 ```
 
@@ -223,6 +224,7 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 19 セキュリティ監査（docs/セキュリティ.md に記録）
 - [x] Phase 16 認証（Cookieセッション / ユーザーごとのデータ分離）
 - [x] Phase 17 Google カレンダー連携（読み取り専用 / 空き時間へ反映）
+- [x] Phase 18 テスト整備（LLM の Tool 選択評価 / コンポーネントテスト）
 - [x] Phase 20 ポートフォリオ化（README / 構成図 / ER図 / API仕様）
 
 ## ドキュメントの更新
@@ -230,3 +232,12 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - `docs/API.md` は **OpenAPI から生成する**。エンドポイントを足したら再生成する
   （ルーターの docstring がそのまま説明になる）。
 - README の Mermaid 図は、データモデルや構成を変えたら合わせて直す。
+
+## テスト
+
+- 外部依存（LLM / Google / Celery）は偽物に差し替える。**通常のテストは
+  ネットワークもブローカーも不要**。
+- 実LLMを呼ぶ評価は `llm` マーカーを付け、既定の実行から外す（`pytest.ini`）。
+- フロントは既定 `node` 環境。DOM が必要なテストだけファイル先頭に
+  `// @vitest-environment jsdom` を書く（ロジックが DOM に依存していないことを保つ）。
+- 詳細は `docs/テスト.md`。

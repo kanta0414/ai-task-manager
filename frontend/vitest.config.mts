@@ -1,7 +1,9 @@
 import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -9,7 +11,10 @@ export default defineConfig({
   },
   test: {
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    // 日時ロジックのテストが実行環境のタイムゾーンに左右されないようにする
+    // 既定は node。DOM が必要なテストはファイル先頭の
+    // `// @vitest-environment jsdom` で切り替える
+    // （ロジックのテストが DOM に依存していないことを保てる）
     environment: "node",
+    setupFiles: ["./vitest.setup.ts"],
   },
 });
