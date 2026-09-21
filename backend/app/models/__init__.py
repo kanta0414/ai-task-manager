@@ -7,17 +7,21 @@ Alembic の autogenerate はここで import されたモデルを対象にす�
 from app.models.calendar_event import CalendarEvent
 from app.models.conversation import Conversation, Message
 from app.models.enums import (
+    CalendarProvider,
     MessageRole,
     NotificationKind,
     TaskPriority,
     TaskStatus,
 )
+from app.models.external_calendar import ExternalCalendarAccount
 from app.models.notification import Notification
 from app.models.task import Task
 from app.models.user import User
 
 __all__ = [
     "CalendarEvent",
+    "CalendarProvider",
+    "ExternalCalendarAccount",
     "Conversation",
     "Message",
     "MessageRole",

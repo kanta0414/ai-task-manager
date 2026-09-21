@@ -33,3 +33,9 @@ class NotificationKind(StrEnum):
     DAILY_DIGEST = "daily_digest"
     #: 終わらなかった作業の組み直し提案
     UNFINISHED = "unfinished"
+
+
+class CalendarProvider(StrEnum):
+    """外部カレンダーの提供元。"""
+
+    GOOGLE = "google"

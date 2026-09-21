@@ -75,6 +75,8 @@ GET    /schedule/free-time（空き時間を探す）
 GET    /schedule/plan（未完了タスクを配置した案。登録はしない）
 GET    /schedule/reschedule-plan（やり残しの組み直し案。反映はしない）
 GET    /notifications        POST /notifications/{id}/read
+GET    /integrations         GET /integrations/google/authorize
+GET    /integrations/google/callback   DELETE /integrations/google
 ```
 
 ## LLM
@@ -144,6 +146,14 @@ app/worker/tasks.py       定期タスク（セッションを用意して Servi
   5分ごとに実行されても同じ予定の通知は増えない。
 - ブローカーは `CELERY_BROKER_URL`。Redis が無い環境では `filesystem://` に切り替え可能。
 
+## 外部カレンダー連携
+
+- 取得するのは **freeBusy（埋まっている時間帯）だけ**。予定のタイトルは取らない。
+- 保存するトークンは `app/core/crypto.py` で暗号化する。**平文で置かない。**
+- OAuth の `state` には署名付きの短命トークンを入れる（CSRF 対策）。
+- **外部が落ちても内部の空き時間計算は止めない**（取得失敗時は考慮しないだけ）。
+- `GOOGLE_CLIENT_ID` 未設定なら機能ごと無効になる。設定手順は `docs/Google連携.md`。
+
 ## Frontend 構成
 
 ```
@@ -206,6 +216,7 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 15 Celery / Redis（リマインダー・朝のまとめ・やり残し確認）
 - [x] Phase 19 セキュリティ監査（docs/セキュリティ.md に記録）
 - [x] Phase 16 認証（Cookieセッション / ユーザーごとのデータ分離）
+- [x] Phase 17 Google カレンダー連携（読み取り専用 / 空き時間へ反映）
 - [x] Phase 20 ポートフォリオ化（README / 構成図 / ER図 / API仕様）
 
 ## ドキュメントの更新

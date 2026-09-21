@@ -13,7 +13,9 @@ from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
 from app.services.tool_registry import ToolRegistry
+from app.integrations.calendar_client import CalendarClient, GoogleCalendarClient
 from app.services.event_service import EventService
+from app.services.external_calendar_service import ExternalCalendarService
 from app.services.notification_service import NotificationService
 from app.services.schedule_service import ScheduleService
 from app.services.task_service import TaskService
@@ -83,8 +85,30 @@ def get_tool_registry(db: DbSession, user: CurrentUser) -> ToolRegistry:
 ToolRegistryDep = Annotated[ToolRegistry, Depends(get_tool_registry)]
 
 
-def get_schedule_service(db: DbSession) -> ScheduleService:
-    return ScheduleService(db)
+def get_calendar_client() -> CalendarClient | None:
+    """Google の認証情報が設定されていなければ None（連携機能は無効）。"""
+    settings = get_settings()
+    if not settings.google_client_id or not settings.google_client_secret:
+        return None
+    return GoogleCalendarClient(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+    )
+
+
+def get_external_calendar_service(db: DbSession) -> ExternalCalendarService:
+    return ExternalCalendarService(db, get_calendar_client())
+
+
+ExternalCalendarServiceDep = Annotated[
+    ExternalCalendarService, Depends(get_external_calendar_service)
+]
+
+
+def get_schedule_service(
+    db: DbSession, external: ExternalCalendarServiceDep
+) -> ScheduleService:
+    return ScheduleService(db, external)
 
 
 ScheduleServiceDep = Annotated[ScheduleService, Depends(get_schedule_service)]

@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://kanta@localhost:5432/ai_task_manager"
     cors_origins: str = "http://localhost:3000"
 
+    # 外部カレンダー連携（Google）。未設定なら連携機能は無効になる
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/integrations/google/callback"
+    frontend_base_url: str = "http://localhost:3000"
+
     # 非同期処理（Celery）
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = ""

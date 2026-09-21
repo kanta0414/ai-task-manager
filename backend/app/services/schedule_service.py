@@ -1,6 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
+from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -14,6 +15,9 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.task_repository import TaskRepository
 from app.schemas.event import EventSearchParams
 from app.schemas.task import TaskSearchParams
+
+if TYPE_CHECKING:
+    from app.services.external_calendar_service import ExternalCalendarService
 
 #: 一度に走査できる期間の上限（取得件数と応答サイズを抑えるため）
 MAX_PERIOD_DAYS = 31
@@ -135,9 +139,13 @@ class ScheduleService:
     LLM は「いつ空いているか」を推測せず、このサービスの結果を使う。
     """
 
-    def __init__(self, db: Session) -> None:
+    def __init__(
+        self, db: Session, external: "ExternalCalendarService | None" = None
+    ) -> None:
         self.events = EventRepository(db)
         self.tasks = TaskRepository(db)
+        # 連携していれば外部カレンダーの埋まり時間も考慮する
+        self.external = external
 
     def find_free_time(
         self,
@@ -158,15 +166,21 @@ class ScheduleService:
         rules = constraints or default_constraints()
         tz = ZoneInfo(user.timezone or get_settings().timezone)
 
-        busy = _merge(
-            [
-                (event.start_at, event.end_at)
-                for event in self.events.search(
-                    user.id,
-                    EventSearchParams(from_=period_start, to=period_end, limit=1000),
+        intervals = [
+            (event.start_at, event.end_at)
+            for event in self.events.search(
+                user.id,
+                EventSearchParams(from_=period_start, to=period_end, limit=1000),
+            )
+        ]
+        if self.external is not None:
+            intervals += [
+                (busy.start_at, busy.end_at)
+                for busy in self.external.busy_intervals(
+                    user, period_start, period_end
                 )
             ]
-        )
+        busy = _merge(intervals)
 
         slots: list[FreeSlot] = []
         for day in _days_between(period_start, period_end, tz):

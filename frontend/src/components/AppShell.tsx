@@ -4,6 +4,7 @@ import { WeekCalendar } from "@/components/calendar/WeekCalendar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { NotificationBar } from "@/components/notifications/NotificationBar";
 import { AuthForm } from "@/components/auth/AuthForm";
+import { CalendarIntegration } from "@/components/integrations/CalendarIntegration";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { EventsProvider } from "@/store/EventsProvider";
 import { useSession } from "@/store/SessionProvider";
@@ -45,6 +46,7 @@ export function AppShell() {
       </header>
 
       <NotificationBar />
+      <CalendarIntegration />
 
       {/* AI が操作した結果をタスク一覧とカレンダーへ反映できるよう、
           チャットも同じ Provider の内側に置く */}

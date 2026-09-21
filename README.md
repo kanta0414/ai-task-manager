@@ -253,6 +253,14 @@ OLLAMA_MODEL=qwen3:1.7b
 Claude API を使う場合は `LLM_PROVIDER=claude` と `ANTHROPIC_API_KEY` を設定する。
 APIキーは `.env` にのみ置き、Git にもフロントエンドにも渡さない。
 
+### Google カレンダー連携（任意）
+
+連携すると Google 側の予定も避けて空き時間を探す。
+取得するのは「埋まっている時間帯」だけで、予定のタイトルは取得しない。
+
+設定手順は [docs/Google連携.md](docs/Google連携.md)。
+`GOOGLE_CLIENT_ID` が未設定なら機能は表示されない。
+
 ### バックグラウンド処理（任意）
 
 ```bash
@@ -329,6 +337,7 @@ Backend のテストは、CRUD だけでなく以下を含む。
 
 - [API 仕様](docs/API.md) — OpenAPI から生成
 - [セキュリティ](docs/セキュリティ.md) — 監査記録と対策
+- [Google カレンダー連携](docs/Google連携.md) — 設定手順
 - [要件定義書](docs/要件定義書.md)
 - [開発手順](docs/開発手順.md)
 - [Claude Code での実装手順](docs/claude-code-開発フロー.md)
@@ -338,5 +347,5 @@ Backend のテストは、CRUD だけでなく以下を含む。
 ## 今後の課題
 
 - **レート制限**: `/chat` は LLM を呼ぶため、公開時に必要
-- **Google Calendar 連携**（Phase 17）
+- **Google カレンダーへの書き出し**: 現在は読み取りのみ（アプリの予定を Google 側へ作る機能は無い）
 - フロントエンドのテストはロジック層のみ（コンポーネントのテストは未整備）

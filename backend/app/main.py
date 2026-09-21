@@ -10,6 +10,7 @@ from app.api.routers import (
     conversations,
     events,
     health,
+    integrations,
     notifications,
     schedule,
     tasks,
@@ -78,6 +79,7 @@ app.include_router(events.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(schedule.router)
+app.include_router(integrations.router)
 app.include_router(notifications.router)
 
 

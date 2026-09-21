@@ -70,6 +70,15 @@
 | `GET` | `/notifications` | バックグラウンド処理が作った通知を返す。 |
 | `POST` | `/notifications/{notification_id}/read` | 通知を既読にする。 |
 
+## 外部カレンダー連携
+
+| メソッド | パス | 説明 |
+| --- | --- | --- |
+| `GET` | `/integrations` | 外部カレンダーの連携状況を返す。 |
+| `DELETE` | `/integrations/google` | 連携を解除する（保存したトークンを削除する）。 |
+| `GET` | `/integrations/google/authorize` | Google の同意画面URLを返す。画面はここへ遷移させる。 |
+| `GET` | `/integrations/google/callback` | Google からの戻り先。 |
+
 ## 死活確認
 
 | メソッド | パス | 説明 |
