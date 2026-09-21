@@ -19,10 +19,10 @@
 
 ```mermaid
 flowchart TD
-    UI["通常UI (Next.js)"] --> API
-    LLM["LLM (Tool Calling)"] --> API
-    API["FastAPI (router)"] --> SVC["Service Layer<br/>業務ルール"]
-    SVC --> REPO["Repository<br/>永続化のみ"]
+    UI["通常UI（Next.js）"] --> API["FastAPI（router）"]
+    LLM["LLM（Tool Calling）"] --> API
+    API --> SVC["Service Layer：業務ルール"]
+    SVC --> REPO["Repository：永続化のみ"]
     REPO --> DB[(PostgreSQL)]
 ```
 
