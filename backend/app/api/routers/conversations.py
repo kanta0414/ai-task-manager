@@ -11,6 +11,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 def list_conversations(
     user: CurrentUser, service: ConversationServiceDep
 ) -> list[Conversation]:
+    """会話の一覧を新しい順に返す。"""
     return service.list_for_user(user)
 
 
@@ -18,6 +19,7 @@ def list_conversations(
 def get_conversation(
     conversation_id: int, user: CurrentUser, service: ConversationServiceDep
 ) -> Conversation:
+    """会話を発言込みで取得する。"""
     return service.get(user, conversation_id)
 
 
@@ -25,4 +27,5 @@ def get_conversation(
 def delete_conversation(
     conversation_id: int, user: CurrentUser, service: ConversationServiceDep
 ) -> None:
+    """会話を発言ごと削除する。"""
     service.delete(user, conversation_id)

@@ -1,38 +1,210 @@
 # AI Task Manager
 
-通常UIとAIアシスタント（自然言語）の両方から操作できる、タスク・スケジュール管理アプリ。
+通常のUIと自然言語の**どちらからでも**操作できる、タスク・スケジュール管理アプリケーション。
 
-- **UIで作ったデータをLLMが操作でき、LLMで作ったデータをUIから操作できる**
-- LLM が使えない環境でも、通常UIだけでタスク・カレンダー管理が完結する
-
-## 構成
+同じデータを2つの経路から操作できる。UIで作ったタスクをAIが編集でき、AIが作った予定をUIから動かせる。
+**AIが使えない環境でも、通常UIだけで全機能が完結する。**
 
 ```
-Next.js (通常UI) ─┐
-                  ├→ FastAPI → Service → Repository → PostgreSQL
-LLM (Tool Calling)┘
+「明日の14時から2時間、企業研究を入れて」  → カレンダーに予定が入る
+「今日が期限のタスクを教えて」              → 一覧が返る
+「空いている時間にタスクを配置して」        → 配置案を提示 → 承認 → 登録
 ```
 
-| 層 | 技術 |
-| --- | --- |
-| Frontend | Next.js (App Router) / React / TypeScript / Tailwind CSS |
-| Backend | Python / FastAPI / Pydantic / SQLAlchemy / Alembic |
-| DB | PostgreSQL 16 |
-| AI | Claude API または Ollama（Provider 抽象化） |
-| 非同期 | Celery / Redis（Phase 15 以降） |
+---
+
+## 特徴
+
+### 1. 通常UIとLLMが同じ Service Layer を通る
+
+```mermaid
+flowchart TD
+    UI["通常UI (Next.js)"] --> API
+    LLM["LLM (Tool Calling)"] --> API
+    API["FastAPI (router)"] --> SVC["Service Layer<br/>業務ルール"]
+    SVC --> REPO["Repository<br/>永続化のみ"]
+    REPO --> DB[(PostgreSQL)]
+```
+
+LLM に専用の処理経路を作らない。Tool は必ず既存の Service を呼ぶため、
+UIから作ったデータとAIから作ったデータが食い違わない。
+
+### 2. LLM にデータベースを触らせない
+
+LLM が実行できる操作は Tool として明示的に定義したものだけ。
+引数は Pydantic で検証してから Service に渡す。
+
+```mermaid
+sequenceDiagram
+    participant U as ユーザー
+    participant L as LLM
+    participant T as ToolRegistry
+    participant S as Service
+    participant D as PostgreSQL
+
+    U->>L: 「ESのタスクを削除して」
+    L->>T: search_tasks(keyword="ES")
+    T->>S: 検索（user_id で絞る）
+    S->>D: SELECT
+    D-->>L: 該当タスク
+    L->>T: delete_task(task_id=3)
+    T-->>U: 「ES作成」を削除します [実行] [キャンセル]
+    U->>T: 実行
+    T->>S: 削除（引数を再検証）
+    S->>D: DELETE
+```
+
+削除・タスク分解・自動配置・再配置は**即時実行しない**。
+承認を実行する専用ツールは LLM に提示すらしない（`exposed=False`）。
+
+### 3. LLM を差し替えられる
+
+```
+LLMProvider（抽象）
+├── OllamaProvider   ローカル実行・API料金なし
+└── ClaudeProvider   Claude API
+```
+
+`.env` の1行で切り替わる。Tool 定義の形式差（Claude と Ollama で異なる）は
+各 Provider の内部に閉じ込めてある。
+
+---
+
+## 画面
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ 通知: まもなく開始: 模擬面接 / 20:52 から始まります      │
+├────────────────┬─────────────────────────────────────────┤
+│ タスク 7件     │ カレンダー 2026/9/21 - 9/27             │
+│                │                                          │
+│ □ 提出物の確認 │  9/21  9/22  9/23  9/24  9/25          │
+│   期限切れ     │ 09:00 面接                              │
+│ □ ES作成       │ 13:00 企業研究  ES作成                  │
+│   今日 18:00   │ 14:00 OB訪問                            │
+│ □ ESを完成させる│                                         │
+│   └ 企業研究   │  ← 空き枠クリックで作成                 │
+│   └ 志望動機   │  ← ドラッグで時間移動                   │
+├────────────────┴─────────────────────────────────────────┤
+│ AI Assistant                    ollama / qwen3:1.7b      │
+│ 「明日2時間空いている時間を探して」                       │
+│ → 12:00〜14:00（120分）、16:00〜22:00（360分）            │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 技術構成
+
+| 層 | 技術 | 選定理由 |
+| --- | --- | --- |
+| Frontend | Next.js (App Router) / TypeScript / Tailwind CSS | カレンダーのドラッグ操作など状態の多いUIをクライアント側で扱うため。型をBackendのスキーマと1対1で対応させている |
+| Backend | FastAPI / Pydantic | LLM の Tool 引数検証と API の入力検証を**同じ Pydantic スキーマ**で書けるため。OpenAPI が自動生成される |
+| ORM | SQLAlchemy 2.0 / Alembic | 型注釈ベースのモデル定義と、スキーマ変更の履歴管理 |
+| DB | PostgreSQL | タイムゾーン付き日時（timestamptz）と ENUM、部分一致検索のため |
+| AI | Ollama / Claude API | Provider を抽象化し、ローカル実行と API の両方に対応 |
+| 非同期 | Celery / Redis | リマインダーと定期処理 |
+
+### データモデル
+
+```mermaid
+erDiagram
+    users ||--o{ tasks : "所有"
+    users ||--o{ calendar_events : "所有"
+    users ||--o{ conversations : "所有"
+    users ||--o{ notifications : "宛先"
+    tasks ||--o{ calendar_events : "作業時間"
+    tasks ||--o{ tasks : "分解"
+    conversations ||--o{ messages : "発言"
+
+    users {
+        int id PK
+        string name
+        string email UK
+        string timezone
+    }
+    tasks {
+        int id PK
+        int user_id FK
+        int parent_task_id FK "分解元"
+        string title
+        text description
+        enum status "todo/in_progress/done"
+        enum priority "low/medium/high"
+        timestamptz due_date
+        int estimated_minutes
+        timestamptz completed_at
+    }
+    calendar_events {
+        int id PK
+        int user_id FK
+        int task_id FK "紐づくタスク"
+        string title
+        timestamptz start_at
+        timestamptz end_at
+        string location
+    }
+    conversations {
+        int id PK
+        int user_id FK
+        string title "最初の発言から生成"
+    }
+    messages {
+        int id PK
+        int conversation_id FK
+        enum role "user/assistant"
+        text content
+    }
+    notifications {
+        int id PK
+        int user_id FK
+        enum kind "reminder/daily_digest/unfinished"
+        string title
+        text body
+        string dedup_key "重複防止"
+        timestamptz read_at
+    }
+```
+
+外部キーの削除時の挙動には意味を持たせている。
+
+- `tasks.user_id` → CASCADE（ユーザーを消せばデータも消える）
+- `calendar_events.task_id` → **SET NULL**（タスクを消しても、確保した時間は予定として残す）
+- `tasks.parent_task_id` → **SET NULL**（親を消しても小タスクは単独で残る）
+
+---
+
+## AI の機能
+
+| 種類 | Tool | 承認 |
+| --- | --- | --- |
+| タスク | create / get / search / update / complete / delete / create_subtasks | 削除・分解のみ必要 |
+| カレンダー | create / get / search / update / delete | 削除のみ必要 |
+| スケジュール | find_free_time / generate_schedule / reschedule_unfinished | 配置・再配置は必要 |
+
+### スケジューリングの規則は Backend が持つ
+
+「いつ空いているか」「どの順で埋めるか」を LLM に推測させない。
+
+- 並び順: **期限が近い → 優先度が高い → 所要時間が長い**
+- 制約: 稼働時間 9:00-22:00 / 1日の作業上限 6時間 / 土日除外（任意）
+- 既存予定を避け、期限に間に合わない配置はしない
+- 置けなかったタスクは**理由つき**で返す
+
+---
 
 ## セットアップ
 
 ```bash
-# 1. DB（ローカル PostgreSQL を使う場合）
+# 1. データベース
 createdb ai_task_manager
-createdb ai_task_manager_test   # テスト用
+createdb ai_task_manager_test
 
 # 2. Backend
 cd backend
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env          # DATABASE_URL などを環境に合わせて編集
+cp .env.example .env
 ./.venv/bin/alembic upgrade head
 ./.venv/bin/uvicorn app.main:app --reload --port 8000
 
@@ -43,42 +215,30 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-- API ドキュメント: http://localhost:8000/docs
 - アプリ: http://localhost:3000
+- API ドキュメント: http://localhost:8000/docs
 
 Docker で DB を動かす場合は `docker compose up -d db`（ホスト側ポート 5433）。
 
-## AI アシスタント（任意）
+### AI アシスタント（任意）
 
-LLM が無くても通常UIだけで全機能を利用できる。AI を使う場合は次のどちらかを設定する。
-
-### ローカル LLM（Ollama / 料金なし）
+LLM が無くても通常UIだけで全機能を利用できる。
 
 ```bash
-ollama serve &                 # サーバー起動
-ollama pull qwen3:1.7b         # Tool Calling に対応した小型モデル（約1.4GB）
+# ローカル LLM（料金なし）
+ollama serve &
+ollama pull qwen3:1.7b
 ```
-
-`backend/.env`:
 
 ```
 LLM_PROVIDER=ollama
 OLLAMA_MODEL=qwen3:1.7b
 ```
 
-### Claude API（従量課金）
+Claude API を使う場合は `LLM_PROVIDER=claude` と `ANTHROPIC_API_KEY` を設定する。
+APIキーは `.env` にのみ置き、Git にもフロントエンドにも渡さない。
 
-```
-LLM_PROVIDER=claude
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-opus-5
-```
-
-APIキーは `.env` にのみ置き、Git にも Frontend にも渡さない。
-
-## バックグラウンド処理（任意）
-
-リマインダーと定期処理を動かす場合のみ必要。起動しなくてもアプリは使える。
+### バックグラウンド処理（任意）
 
 ```bash
 cd backend
@@ -92,14 +252,77 @@ cd backend
 | 今日のまとめ | 毎朝 7:00 | その日の予定と期限のタスクを通知 |
 | やり残し確認 | 毎晩 23:00 | 終わらなかった作業を通知 |
 
-ブローカーは既定で Redis（`CELERY_BROKER_URL`）。Redis を用意できない環境では
-`CELERY_BROKER_URL=filesystem://` に切り替えるとインストール無しで動く（開発用）。
+**macOS では `--pool=solo` が必要。** 既定の prefork プールは macOS のプロセス起動方式と
+相性が悪く `not enough values to unpack` で失敗する。
 
-**macOS では `--pool=solo` を付ける。** 既定の prefork プールは macOS の
-プロセス起動方式と相性が悪く、`not enough values to unpack` で失敗する。
+---
+
+## テスト
+
+```bash
+cd backend && ./.venv/bin/python -m pytest -q     # 202件
+cd frontend && npm test                            # 40件
+```
+
+Backend のテストは、CRUD だけでなく以下を含む。
+
+- **権限分離**: 他人のタスク・予定・会話・通知に触れないこと（404 を返す）
+- **Tool Calling**: 引数の検証、エラー時の差し戻し、承認フロー、連鎖実行、往復の上限
+- **スケジューリング**: 空き時間の計算、重なる予定の統合、配置順序、1日の上限、期限超過
+- **アーキテクチャ**: ToolRegistry が直接DBを触っていないこと
+- **セキュリティ**: 入力長の上限、リクエストサイズ、CORS
+
+---
+
+## ローカルLLMで実測したこと
+
+開発機は Intel Core i5-7360U / 8GB RAM（2017年モデル）。CPU 推論のため、
+**入力トークン数が応答時間に直結する**。計測して次の対策を入れた。
+
+| 対策 | 効果 |
+| --- | --- |
+| 現在日時をシステムプロンプトから利用者メッセージへ移動 | プロンプトキャッシュが効き **102秒 → 19秒** |
+| Tool スキーマの簡略化（`anyOf: [型, null]` と文字数制限を除去） | 2338 → 1992 トークン |
+| `temperature=0` | Tool 選択のブレを抑制 |
+| `num_ctx=6144` | 既定の 4096 では Tool 定義と履歴が溢れて切り捨てられる |
+| `think=false` | qwen3 の思考トークンは CPU では高コスト |
+
+1つ目が効いた理由は、システムプロンプトに現在時刻があると分が変わるたびに
+「システムプロンプト＋Tool定義」が別物になり、LLM 側のプロンプトキャッシュが
+毎回捨てられるため。固定部分と可変部分を分けることで 95% を再利用できるようになった。
+
+### 小型モデルの限界と、その前提での設計
+
+`qwen3:1.7b` は単発の指示（作成・検索・空き時間の探索）は扱えるが、
+検索してから更新するような2段階の指示は安定しない。
+**ツールを呼ばずに「削除しました」と答えることもある。**
+
+ただしこの構成では、LLM が何を言おうと **Tool を経由しない限りデータは変わらない**。
+モデルの誤りがデータ破壊につながらないことを、テストで確認している。
+
+精度を補うために、プロンプトではなく**モデルが必ず読む場所**に正解の形を置いた。
+
+```json
+{"error": "タスク (id=1) が見つかりません",
+ "next_step": "id を推測してはいけません。search_tasks で対象を検索し、
+               返ってきた id を使って呼び直してください。"}
+```
+
+---
 
 ## ドキュメント
 
+- [API 仕様](docs/API.md) — OpenAPI から生成
+- [セキュリティ](docs/セキュリティ.md) — 監査記録と対策
 - [要件定義書](docs/要件定義書.md)
-- [開発手順（フェーズ計画）](docs/開発手順.md)
+- [開発手順](docs/開発手順.md)
 - [Claude Code での実装手順](docs/claude-code-開発フロー.md)
+
+---
+
+## 今後の課題
+
+- **認証**（Phase 16）: 現在は固定の既定ユーザー。`get_current_user` 1箇所の差し替えで移行できる構造
+- **レート制限**: `/chat` は LLM を呼ぶため、公開時に必要
+- **Google Calendar 連携**（Phase 17）
+- フロントエンドのテストはロジック層のみ（コンポーネントのテストは未整備）

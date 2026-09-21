@@ -13,7 +13,7 @@ Claude Code はこのファイルを毎回読み込む。実装前に必ず `doc
 ```
 backend/   FastAPI + SQLAlchemy + Alembic（レイヤード構成）
 frontend/  Next.js (App Router) + TypeScript + Tailwind
-docs/      要件定義書・開発手順・Claude Code 開発フロー
+docs/      要件定義書・開発手順・API仕様・セキュリティ・Claude Code 開発フロー
 ```
 
 ## アーキテクチャの絶対ルール
@@ -202,3 +202,10 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 14 未完了タスクの再配置（reschedule_unfinished）
 - [x] Phase 15 Celery / Redis（リマインダー・朝のまとめ・やり残し確認）
 - [x] Phase 19 セキュリティ監査（docs/セキュリティ.md に記録）
+- [x] Phase 20 ポートフォリオ化（README / 構成図 / ER図 / API仕様）
+
+## ドキュメントの更新
+
+- `docs/API.md` は **OpenAPI から生成する**。エンドポイントを足したら再生成する
+  （ルーターの docstring がそのまま説明になる）。
+- README の Mermaid 図は、データモデルや構成を変えたら合わせて直す。

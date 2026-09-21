@@ -13,6 +13,7 @@ router = APIRouter(prefix="/events", tags=["events"])
 def create_event(
     payload: EventCreate, user: CurrentUser, service: EventServiceDep
 ) -> CalendarEvent:
+    """予定を作成する。"""
     return service.create(user, payload)
 
 
@@ -32,6 +33,7 @@ def search_events(
     limit: int = Query(default=500, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> list[CalendarEvent]:
+    """期間やキーワードで予定を検索する。期間に重なる予定を返す。"""
     params = EventSearchParams(
         from_=from_,
         to=to,
@@ -48,6 +50,7 @@ def search_events(
 def get_event(
     event_id: int, user: CurrentUser, service: EventServiceDep
 ) -> CalendarEvent:
+    """予定を1件取得する。"""
     return service.get(user, event_id)
 
 
@@ -55,9 +58,11 @@ def get_event(
 def update_event(
     event_id: int, payload: EventUpdate, user: CurrentUser, service: EventServiceDep
 ) -> CalendarEvent:
+    """予定を部分更新する。ドラッグ移動もこれを使う。"""
     return service.update(user, event_id, payload)
 
 
 @router.delete("/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_event(event_id: int, user: CurrentUser, service: EventServiceDep) -> None:
+    """予定を削除する。"""
     service.delete(user, event_id)

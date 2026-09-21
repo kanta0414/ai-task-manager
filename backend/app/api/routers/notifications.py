@@ -13,6 +13,7 @@ def list_notifications(
     service: NotificationServiceDep,
     unread_only: bool = False,
 ) -> list[Notification]:
+    """バックグラウンド処理が作った通知を返す。"""
     return service.list_for_user(user, unread_only=unread_only)
 
 
@@ -20,4 +21,5 @@ def list_notifications(
 def mark_read(
     notification_id: int, user: CurrentUser, service: NotificationServiceDep
 ) -> Notification:
+    """通知を既読にする。"""
     return service.mark_read(user, notification_id)

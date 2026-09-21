@@ -20,6 +20,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 def create_task(
     payload: TaskCreate, user: CurrentUser, service: TaskServiceDep
 ) -> Task:
+    """タスクを作成する。"""
     return service.create(user, payload)
 
 
@@ -37,6 +38,7 @@ def search_tasks(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[Task]:
+    """条件でタスクを検索する。期限なしは常に末尾に並ぶ。"""
     params = TaskSearchParams(
         statuses=status_,
         priorities=priority,
@@ -53,6 +55,7 @@ def search_tasks(
 
 @router.get("/{task_id}", response_model=TaskRead)
 def get_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
+    """タスクを1件取得する。"""
     return service.get(user, task_id)
 
 
@@ -60,19 +63,23 @@ def get_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
 def update_task(
     task_id: int, payload: TaskUpdate, user: CurrentUser, service: TaskServiceDep
 ) -> Task:
+    """タスクを部分更新する。未指定の項目は変更しない。"""
     return service.update(user, task_id, payload)
 
 
 @router.post("/{task_id}/complete", response_model=TaskRead)
 def complete_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
+    """タスクを完了にする。"""
     return service.complete(user, task_id)
 
 
 @router.post("/{task_id}/reopen", response_model=TaskRead)
 def reopen_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
+    """完了したタスクを未完了に戻す。"""
     return service.reopen(user, task_id)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> None:
+    """タスクを削除する。"""
     service.delete(user, task_id)
