@@ -8,6 +8,8 @@ class IntegrationStatus(BaseModel):
     google_available: bool
     google_connected: bool
     google_account_email: str | None = None
+    #: 更新トークンが失効し、つなぎ直しが必要な状態
+    google_needs_reauth: bool = False
 
 
 class AuthorizeUrl(BaseModel):

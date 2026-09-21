@@ -16,6 +16,7 @@ def status_(user: CurrentUser, service: ExternalCalendarServiceDep) -> Integrati
         google_available=service.available,
         google_connected=bool(accounts),
         google_account_email=accounts[0].account_email if accounts else None,
+        google_needs_reauth=bool(accounts and accounts[0].reauth_required),
     )
 
 

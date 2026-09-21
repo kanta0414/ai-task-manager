@@ -274,6 +274,7 @@ def test_status_reports_not_connected(client: TestClient, api) -> None:
         "google_available": True,
         "google_connected": False,
         "google_account_email": None,
+        "google_needs_reauth": False,
     }
 
 
@@ -296,5 +297,68 @@ def test_connection_is_disabled_without_credentials(
     try:
         assert client.get("/integrations").json()["google_available"] is False
         assert client.get("/integrations/google/authorize").status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_external_calendar_service, None)
+
+
+# --------------------------------------------------- 更新トークンの失効
+
+
+class ExpiredRefreshClient(FakeCalendarClient):
+    """更新トークンが失効した Google の振る舞い。"""
+
+    def refresh_access_token(self, refresh_token: str):
+        from app.core.exceptions import BusinessRuleError
+
+        raise BusinessRuleError("Google の認証に失敗しました")
+
+
+def test_expired_refresh_token_is_recorded(db: Session, user: User) -> None:
+    """テストモードの OAuth クライアントは7日で更新トークンが失効する。
+
+    黙って無視すると「なぜか予定が考慮されない」状態になるため、
+    再連携が必要だと記録する。
+    """
+    service = ExternalCalendarService(db, ExpiredRefreshClient())
+    service.connect(user, code="auth-code")
+
+    account = db.query(ExternalCalendarAccount).one()
+    account.access_token_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+
+    assert service.busy_intervals(user, at("2026-09-22 00:00"), at("2026-09-23 00:00")) == []
+
+    db.refresh(account)
+    assert account.reauth_required is True
+
+
+def test_reconnecting_clears_the_reauth_flag(db: Session, user: User) -> None:
+    service = ExternalCalendarService(db, ExpiredRefreshClient())
+    service.connect(user, code="auth-code")
+    account = db.query(ExternalCalendarAccount).one()
+    account.reauth_required = True
+    db.commit()
+
+    ExternalCalendarService(db, FakeCalendarClient()).connect(user, code="again")
+
+    db.refresh(account)
+    assert account.reauth_required is False
+
+
+def test_status_reports_that_reconnection_is_needed(
+    client: TestClient, db: Session, user: User
+) -> None:
+    service = ExternalCalendarService(db, FakeCalendarClient())
+    service.connect(user, code="auth-code")
+    db.query(ExternalCalendarAccount).one().reauth_required = True
+    db.commit()
+
+    app.dependency_overrides[get_external_calendar_service] = (
+        lambda: ExternalCalendarService(db, FakeCalendarClient())
+    )
+    try:
+        body = client.get("/integrations").json()
+        assert body["google_connected"] is True
+        assert body["google_needs_reauth"] is True
     finally:
         app.dependency_overrides.pop(get_external_calendar_service, None)

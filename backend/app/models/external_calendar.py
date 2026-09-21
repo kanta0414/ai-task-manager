@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -47,6 +48,11 @@ class ExternalCalendarAccount(TimestampMixin, Base):
     access_token_encrypted: Mapped[str | None] = mapped_column(Text)
     access_token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
+    )
+    #: 更新トークンが失効し、再連携が必要な状態。
+    #: テストモードの OAuth クライアントは7日で失効するため必ず起こる
+    reauth_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     user: Mapped["User"] = relationship()

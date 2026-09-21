@@ -95,6 +95,7 @@ class ExternalCalendarService:
         account.refresh_token_encrypted = encrypt(tokens.refresh_token)
         account.access_token_encrypted = encrypt(tokens.access_token)
         account.access_token_expires_at = tokens.expires_at
+        account.reauth_required = False
 
         self.db.add(account)
         self.db.commit()
@@ -152,15 +153,30 @@ class ExternalCalendarService:
 
         refresh_token = decrypt(account.refresh_token_encrypted)
         if refresh_token is None or self.client is None:
+            self._mark_reauth_required(account)
             return None
 
-        tokens = self.client.refresh_access_token(refresh_token)
+        try:
+            tokens = self.client.refresh_access_token(refresh_token)
+        except BusinessRuleError:
+            # テストモードの OAuth クライアントは更新トークンが7日で失効する。
+            # 黙って無視すると「なぜか予定が考慮されない」状態になるため記録し、
+            # 画面で再連携を促せるようにする
+            self._mark_reauth_required(account)
+            return None
+
         account.access_token_encrypted = encrypt(tokens.access_token)
         account.access_token_expires_at = tokens.expires_at
+        account.reauth_required = False
         if tokens.refresh_token:
             account.refresh_token_encrypted = encrypt(tokens.refresh_token)
         self.db.commit()
         return tokens.access_token
+
+    def _mark_reauth_required(self, account: ExternalCalendarAccount) -> None:
+        if not account.reauth_required:
+            account.reauth_required = True
+            self.db.commit()
 
     def _find(self, user_id: int) -> ExternalCalendarAccount | None:
         stmt = select(ExternalCalendarAccount).where(

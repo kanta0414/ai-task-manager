@@ -79,9 +79,26 @@ export function CalendarIntegration() {
       <span className="font-medium">Google カレンダー</span>
       {status.google_connected ? (
         <>
-          <span className="text-muted">
-            連携中: {status.google_account_email}（空き時間の計算に反映されます）
-          </span>
+          {status.google_needs_reauth ? (
+            <span className="text-amber-700 dark:text-amber-300">
+              連携が切れました（{status.google_account_email}）。
+              つなぎ直すまで Google の予定は考慮されません
+            </span>
+          ) : (
+            <span className="text-muted">
+              連携中: {status.google_account_email}（空き時間の計算に反映されます）
+            </span>
+          )}
+          {status.google_needs_reauth && (
+            <button
+              type="button"
+              onClick={() => void connect()}
+              disabled={working}
+              className="rounded-md bg-accent px-3 py-1 font-medium text-white disabled:opacity-50"
+            >
+              つなぎ直す
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void disconnect()}
