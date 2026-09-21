@@ -1,17 +1,30 @@
+from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.exceptions import BusinessRuleError
+from app.models.enums import TaskPriority, TaskStatus
+from app.models.task import Task
 from app.models.user import User
 from app.repositories.event_repository import EventRepository
+from app.repositories.task_repository import TaskRepository
 from app.schemas.event import EventSearchParams
+from app.schemas.task import TaskSearchParams
 
 #: 一度に走査できる期間の上限（取得件数と応答サイズを抑えるため）
 MAX_PERIOD_DAYS = 31
+#: 1日に自動配置する作業時間の上限（開発手順15「1日6時間以上は入れない」）
+DEFAULT_MAX_MINUTES_PER_DAY = 360
+#: 優先度の高い順に並べるための重み
+_PRIORITY_ORDER = {
+    TaskPriority.HIGH: 0,
+    TaskPriority.MEDIUM: 1,
+    TaskPriority.LOW: 2,
+}
 
 
 @dataclass(frozen=True)
@@ -43,6 +56,56 @@ class ScheduleConstraints:
         return rule
 
 
+@dataclass(frozen=True)
+class ScheduledItem:
+    """自動配置されたタスクの作業時間。"""
+
+    task_id: int
+    title: str
+    start_at: datetime
+    end_at: datetime
+
+    @property
+    def minutes(self) -> int:
+        return int((self.end_at - self.start_at).total_seconds() // 60)
+
+
+@dataclass(frozen=True)
+class SkippedTask:
+    """配置できなかったタスクと、その理由。"""
+
+    task_id: int
+    title: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class SchedulePlan:
+    """スケジュール案。**この時点では登録しない**（要件定義書 19）。"""
+
+    items: list[ScheduledItem]
+    skipped: list[SkippedTask]
+    rule: str
+
+
+def sort_key_for_scheduling(task: Task) -> tuple:
+    """配置する順番。
+
+    開発手順15 のとおり「期限が近い → 優先度が高い → 所要時間が長い」。
+    期限なしのタスクは期限ありより後に回す。
+    """
+    return (
+        task.due_date is None,
+        task.due_date or datetime.max.replace(tzinfo=timezone.utc),
+        _PRIORITY_ORDER[task.priority],
+        -(task.estimated_minutes or 0),
+    )
+
+
+def _describe_plan_rule(rules: ScheduleConstraints, max_minutes_per_day: int) -> str:
+    return f"{rules.describe()} / 1日あたり最大{max_minutes_per_day // 60}時間"
+
+
 class ScheduleService:
     """カレンダーの空き時間を計算する。
 
@@ -51,6 +114,7 @@ class ScheduleService:
 
     def __init__(self, db: Session) -> None:
         self.events = EventRepository(db)
+        self.tasks = TaskRepository(db)
 
     def find_free_time(
         self,
@@ -103,6 +167,115 @@ class ScheduleService:
             )
 
         return slots
+
+    def generate_schedule(
+        self,
+        user: User,
+        *,
+        period_start: datetime,
+        period_end: datetime,
+        task_ids: list[int] | None = None,
+        constraints: ScheduleConstraints | None = None,
+        max_minutes_per_day: int = DEFAULT_MAX_MINUTES_PER_DAY,
+    ) -> SchedulePlan:
+        """未完了タスクを空き時間へ配置した案を作る。
+
+        **ここでは登録しない。** 提案を返し、ユーザーの承認後に予定化する
+        （要件定義書 19）。配置の規則は LLM ではなくこのメソッドが持つ。
+        """
+        rules = constraints or default_constraints()
+        tz = ZoneInfo(user.timezone or get_settings().timezone)
+
+        # 空き時間は1分単位で全部取り、ここで埋めていく
+        free: list[list[datetime]] = [
+            [slot.start_at, slot.end_at]
+            for slot in self.find_free_time(
+                user,
+                period_start=period_start,
+                period_end=period_end,
+                minutes_needed=1,
+                constraints=rules,
+            )
+        ]
+
+        used_per_day: dict[date, int] = defaultdict(int)
+        items: list[ScheduledItem] = []
+        skipped: list[SkippedTask] = []
+
+        for task in self._tasks_to_schedule(user, task_ids):
+            if not task.estimated_minutes:
+                skipped.append(
+                    SkippedTask(task.id, task.title, "所要時間が未設定です")
+                )
+                continue
+
+            item, reason = self._place(task, free, used_per_day, tz, max_minutes_per_day)
+            if item is None:
+                skipped.append(SkippedTask(task.id, task.title, reason))
+            else:
+                items.append(item)
+
+        items.sort(key=lambda item: item.start_at)
+        return SchedulePlan(
+            items=items,
+            skipped=skipped,
+            rule=_describe_plan_rule(rules, max_minutes_per_day),
+        )
+
+    def _tasks_to_schedule(self, user: User, task_ids: list[int] | None) -> list[Task]:
+        tasks = self.tasks.search(
+            user.id,
+            TaskSearchParams(
+                statuses=[TaskStatus.TODO, TaskStatus.IN_PROGRESS], limit=100
+            ),
+        )
+        if task_ids is not None:
+            wanted = set(task_ids)
+            tasks = [task for task in tasks if task.id in wanted]
+        return sorted(tasks, key=sort_key_for_scheduling)
+
+    def _place(
+        self,
+        task: Task,
+        free: list[list[datetime]],
+        used_per_day: dict[date, int],
+        tz: ZoneInfo,
+        max_minutes_per_day: int,
+    ) -> tuple[ScheduledItem | None, str]:
+        """空き時間の早い順に、最初に収まる場所へ置く。"""
+        duration = timedelta(minutes=task.estimated_minutes or 0)
+        blocked_by_daily_cap = False
+
+        for index, (start, end) in enumerate(free):
+            day = start.astimezone(tz).date()
+
+            if used_per_day[day] + (task.estimated_minutes or 0) > max_minutes_per_day:
+                blocked_by_daily_cap = True
+                continue
+            if end - start < duration:
+                continue
+
+            finish = start + duration
+            if task.due_date is not None and finish > task.due_date:
+                # 空きは時刻順なので、これ以降はさらに遅くなる
+                return None, "期限までに空き時間が足りません"
+
+            free[index] = [finish, end]
+            if free[index][0] >= free[index][1]:
+                free.pop(index)
+            used_per_day[day] += task.estimated_minutes or 0
+
+            return (
+                ScheduledItem(
+                    task_id=task.id, title=task.title, start_at=start, end_at=finish
+                ),
+                "",
+            )
+
+        if blocked_by_daily_cap:
+            return None, "1日の作業上限に達したため置けませんでした"
+        return None, "十分な長さの空き時間がありません"
+
 
 
 def default_constraints() -> ScheduleConstraints:

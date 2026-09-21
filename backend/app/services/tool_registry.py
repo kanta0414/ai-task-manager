@@ -14,8 +14,10 @@ from app.models.user import User
 from app.schemas.event import EventCreate, EventSearchParams, EventUpdate
 from app.schemas.task import TaskCreate, TaskSearchParams, TaskUpdate
 from app.schemas.tools import (
+    ApplyScheduleArgs,
     CompleteTaskArgs,
     FindFreeTimeArgs,
+    GenerateScheduleArgs,
     CreateEventArgs,
     CreateTaskArgs,
     DeleteEventArgs,
@@ -29,6 +31,7 @@ from app.schemas.tools import (
 )
 from app.services.event_service import EventService
 from app.services.schedule_service import (
+    SchedulePlan,
     ScheduleConstraints,
     ScheduleService,
     default_constraints,
@@ -55,6 +58,8 @@ class PendingAction:
 class ToolOutcome:
     content: Any
     is_error: bool = False
+    #: 承認後にユーザーへ返す文言（件数など実行結果に依存する場合に使う）
+    message: str | None = None
     #: データを変更したか（UI の再取得が必要かの判断に使う）
     mutated: bool = False
     pending: PendingAction | None = None
@@ -67,6 +72,8 @@ class ToolDefinition:
     handler: Callable[[BaseModel], ToolOutcome]
     #: 実行前にユーザーへ確認を求める
     needs_confirmation: bool = False
+    #: LLM に提示するか（承認後の実行専用ツールは提示しない）
+    exposed: bool = True
 
 
 def summarize_task(task: Task) -> dict[str, Any]:
@@ -190,13 +197,35 @@ class ToolRegistry:
             ),
             "find_free_time": ToolDefinition(
                 description=(
-                    "指定した期間の空き時間を探す。"
-                    "「2時間空いている時間を探して」や、予定を入れる前に"
-                    "いつが空いているか確認したいときに使う。"
+                    "空き時間を「調べるだけ」のツール。"
+                    "「2時間空いている時間を探して」「いつが空いてる？」に使う。"
+                    "タスクを配置するところまで求められている場合は"
+                    "generate_schedule を使うこと。"
                     "いつ空いているかを推測せず、必ずこのツールの結果を使うこと。"
                 ),
                 args_model=FindFreeTimeArgs,
                 handler=self._find_free_time,
+            ),
+            "generate_schedule": ToolDefinition(
+                description=(
+                    "未完了タスクを空き時間へ「配置する」ツール。"
+                    "「空いている時間にタスクを入れて」「スケジュールを組んで」"
+                    "「今週中に終わらせたい」のように、"
+                    "調べるだけでなく予定を作ってほしい依頼はすべてこれを使う。"
+                    "空き時間の計算もこのツールが内部で行うので、"
+                    "先に find_free_time を呼ぶ必要はない。"
+                    "登録前にユーザーの承認が求められる。"
+                ),
+                args_model=GenerateScheduleArgs,
+                handler=self._unreachable,
+                needs_confirmation=True,
+            ),
+            "apply_schedule": ToolDefinition(
+                description="承認されたスケジュールを予定として登録する。",
+                args_model=ApplyScheduleArgs,
+                handler=self._apply_schedule,
+                needs_confirmation=True,
+                exposed=False,
             ),
             "delete_event": ToolDefinition(
                 description="予定を削除する。取り消せないためユーザーの確認が必要。",
@@ -216,6 +245,7 @@ class ToolRegistry:
                 ),
             )
             for name, definition in self._definitions.items()
+            if definition.exposed
         ]
 
     # ------------------------------------------------------------------ 実行
@@ -270,6 +300,9 @@ class ToolRegistry:
             task = self.tasks.get(self.user, args.task_id)
             description = f"タスク「{task.title}」を削除します。"
             done_message = f"タスク「{task.title}」を削除しました。"
+        elif name == "generate_schedule":
+            assert isinstance(args, GenerateScheduleArgs)
+            return self._propose_schedule(args)
         elif name == "delete_event":
             assert isinstance(args, DeleteEventArgs)
             event = self.events.get(self.user, args.event_id)
@@ -412,3 +445,122 @@ class ToolRegistry:
                 ],
             }
         )
+
+    # --------------------------------------------------- 自動スケジューリング
+
+    def _propose_schedule(self, args: GenerateScheduleArgs) -> ToolOutcome:
+        """配置案を作って承認を求める。**この時点では登録しない。**"""
+        defaults = default_constraints()
+        plan = self.schedule.generate_schedule(
+            self.user,
+            period_start=args.period_start,
+            period_end=args.period_end,
+            task_ids=args.task_ids,
+            constraints=ScheduleConstraints(
+                day_start_hour=defaults.day_start_hour,
+                day_end_hour=defaults.day_end_hour,
+                exclude_weekends=args.exclude_weekends,
+            ),
+        )
+
+        if not plan.items:
+            # 置けるものが無いときは承認を求めず、理由をそのまま伝える
+            return ToolOutcome(
+                {
+                    "scheduled": 0,
+                    "rule": plan.rule,
+                    "skipped": [
+                        {"task_id": s.task_id, "title": s.title, "reason": s.reason}
+                        for s in plan.skipped
+                    ],
+                }
+            )
+
+        return ToolOutcome(
+            {
+                "status": "confirmation_required",
+                "message": "ユーザーの承認待ちです。承認されるまで登録されません。",
+                "rule": plan.rule,
+                "planned": [
+                    {
+                        "task_id": item.task_id,
+                        "title": item.title,
+                        "start_at": item.start_at.isoformat(),
+                        "end_at": item.end_at.isoformat(),
+                    }
+                    for item in plan.items
+                ],
+                "skipped": [
+                    {"title": s.title, "reason": s.reason} for s in plan.skipped
+                ],
+            },
+            pending=PendingAction(
+                tool="apply_schedule",
+                arguments={
+                    "items": [
+                        {
+                            "task_id": item.task_id,
+                            "start_at": item.start_at.isoformat(),
+                            "end_at": item.end_at.isoformat(),
+                        }
+                        for item in plan.items
+                    ]
+                },
+                description=format_plan(plan),
+                done_message=f"{len(plan.items)}件の予定を登録しました。",
+            ),
+        )
+
+    def _apply_schedule(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, ApplyScheduleArgs)
+        created = []
+        for item in args.items:
+            # タスクの所有者確認はここで行われる（他人のタスクは登録できない）
+            task = self.tasks.get(self.user, item.task_id)
+            event = self.events.create(
+                self.user,
+                EventCreate(
+                    title=task.title,
+                    start_at=item.start_at,
+                    end_at=item.end_at,
+                    task_id=task.id,
+                ),
+            )
+            created.append({"event_id": event.id, "title": event.title})
+
+        return ToolOutcome(
+            {"created": len(created), "events": created},
+            mutated=True,
+            message=f"{len(created)}件の予定を登録しました。",
+        )
+
+    def _unreachable(self, args: BaseModel) -> ToolOutcome:  # pragma: no cover
+        """承認フローを必ず通すツール用。直接は呼ばれない。"""
+        raise AssertionError("このツールは確認フローを経由して実行される")
+
+
+WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+def format_plan(plan: SchedulePlan) -> str:
+    """確認ダイアログに出す文面（要件定義書 19 の形式）。"""
+    lines = ["以下の予定を登録します。", ""]
+
+    current_day = None
+    for item in plan.items:
+        day = item.start_at.date()
+        if day != current_day:
+            current_day = day
+            lines.append(f"{day.month}/{day.day}({WEEKDAYS_JA[day.weekday()]})")
+        lines.append(
+            f"  {item.start_at:%H:%M}〜{item.end_at:%H:%M} {item.title}"
+        )
+
+    if plan.skipped:
+        lines.append("")
+        lines.append("配置できなかったタスク:")
+        lines.extend(f"  {s.title}（{s.reason}）" for s in plan.skipped)
+
+    lines.append("")
+    lines.append(f"条件: {plan.rule}")
+    return "\n".join(lines)

@@ -42,7 +42,8 @@ class ChatConfirmRequest(BaseModel):
     conversation_id: int = Field(gt=0)
     tool: str = Field(min_length=1, max_length=64)
     arguments: dict[str, Any]
-    description: str = Field(min_length=1, max_length=200)
+    # スケジュール案は複数行になるため長めに取る
+    description: str = Field(min_length=1, max_length=2000)
 
 
 class ChatStatus(BaseModel):

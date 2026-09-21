@@ -123,3 +123,31 @@ class FindFreeTimeArgs(BaseModel):
         gt=0, le=1440, description="確保したい時間（分）"
     )
     exclude_weekends: bool = Field(default=False, description="土日を除くかどうか")
+
+
+class GenerateScheduleArgs(BaseModel):
+    period_start: AwareDatetime = Field(
+        description="配置する期間の開始日時。その日から始めるなら 00:00（例: 2026-09-22T00:00）"
+    )
+    period_end: AwareDatetime = Field(
+        description="配置する期間の終了日時。最終日を含めるなら翌日の 00:00"
+    )
+    task_ids: list[int] | None = Field(
+        default=None,
+        description="対象を絞る場合のタスクID。省略すると未完了タスク全体が対象",
+    )
+    exclude_weekends: bool = Field(default=False, description="土日を除くかどうか")
+
+
+class ScheduleItemArg(BaseModel):
+    """承認済みスケジュールの1件。"""
+
+    task_id: int = Field(gt=0)
+    start_at: AwareDatetime
+    end_at: AwareDatetime
+
+
+class ApplyScheduleArgs(BaseModel):
+    """承認後に予定を登録するための引数（LLM には提示しない）。"""
+
+    items: list[ScheduleItemArg] = Field(min_length=1, max_length=50)

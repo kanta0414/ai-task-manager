@@ -83,6 +83,8 @@ def build_system_prompt(user: User) -> str:
     その id で delete_task を呼ぶ。id を推測してはいけない。
 - 「明日の企業研究を18時からにして」
   → search_events で対象の id を確認してから update_event を呼ぶ。
+- 「空いている時間にタスクを配置して」「今週中に終わらせたい」
+  → generate_schedule を実行する。find_free_time は「調べるだけ」なので使わない。
 
 # 応答のルール
 - 日本語で、簡潔に答える。
@@ -199,7 +201,8 @@ class ChatService:
                 detail = str(tool_outcome.content.get("error", ""))
             reply = f"実行できませんでした。{detail}"
         else:
-            reply = action.done_message
+            # 件数など実行してみないと分からない文言はツール側が返す
+            reply = tool_outcome.message or action.done_message
 
         self.conversations.record_assistant_message(conversation, reply)
 

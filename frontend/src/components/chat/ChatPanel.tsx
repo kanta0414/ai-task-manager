@@ -271,7 +271,7 @@ export function ChatPanel() {
             {pending && (
               <li>
                 <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
-                  <p className="text-sm text-amber-900 dark:text-amber-100">
+                  <p className="whitespace-pre-wrap text-sm text-amber-900 dark:text-amber-100">
                     {pending.description}
                   </p>
                   <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">

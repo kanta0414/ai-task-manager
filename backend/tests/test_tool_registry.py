@@ -30,7 +30,17 @@ def test_specs_cover_mvp_task_tools(registry: ToolRegistry) -> None:
 
 def test_tool_count_stays_small(registry: ToolRegistry) -> None:
     """Tool が増えすぎると LLM の選択精度が落ちるため、数を抑える。"""
-    assert len(registry.specs()) == 12
+    assert len(registry.specs()) == 13
+
+
+def test_internal_tools_are_not_offered_to_the_model(registry: ToolRegistry) -> None:
+    """承認後の実行専用ツールは LLM に見せない。
+
+    見せると承認を経ずに呼ぼうとしてしまうため。
+    """
+    offered = {spec.name for spec in registry.specs()}
+    assert "generate_schedule" in offered
+    assert "apply_schedule" not in offered
 
 
 def test_specs_have_no_json_schema_refs(registry: ToolRegistry) -> None:
@@ -387,3 +397,15 @@ def test_find_free_time_description_guides_whole_day_search(
     """
     spec = next(s for s in registry.specs() if s.name == "find_free_time")
     assert "00:00" in spec.input_schema["properties"]["period_start"]["description"]
+
+
+def test_scheduling_tools_state_when_to_use_each(registry: ToolRegistry) -> None:
+    """「探す」と「配置する」の使い分けを説明に書く。
+
+    どちらも空き時間に関係するため、小型モデルが取り違えたことがあった。
+    """
+    specs = {spec.name: spec.description for spec in registry.specs()}
+
+    assert "generate_schedule" in specs["find_free_time"]
+    assert "調べるだけ" in specs["find_free_time"]
+    assert "find_free_time" in specs["generate_schedule"]
