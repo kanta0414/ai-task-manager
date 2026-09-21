@@ -14,6 +14,8 @@ export type Task = {
   due_date: string | null;
   estimated_minutes: number | null;
   completed_at: string | null;
+  /** 分解元のタスク。分解で作られた小タスクのみ値が入る */
+  parent_task_id: number | null;
   created_at: string;
   updated_at: string;
 };

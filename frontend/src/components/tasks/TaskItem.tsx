@@ -5,6 +5,7 @@ import { TASK_PRIORITY_LABEL, type Task } from "@/types/task";
 
 type Props = {
   task: Task;
+  isSubtask?: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -30,13 +31,17 @@ const DUE_PREFIX: Record<string, string> = {
   upcoming: "",
 };
 
-export function TaskItem({ task, onToggle, onEdit, onDelete }: Props) {
+export function TaskItem({ task, isSubtask = false, onToggle, onEdit, onDelete }: Props) {
   const done = task.status === "done";
   const due = dueState(task.due_date);
   const duration = formatDuration(task.estimated_minutes);
 
   return (
-    <li className="group flex items-start gap-3 rounded-lg border border-border bg-surface p-3">
+    <li
+      className={`group flex items-start gap-3 rounded-lg border border-border bg-surface p-3 ${
+        isSubtask ? "ml-6 border-l-2 border-l-accent/40" : ""
+      }`}
+    >
       <input
         type="checkbox"
         checked={done}

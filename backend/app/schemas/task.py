@@ -16,6 +16,9 @@ class TaskCreate(BaseModel):
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: AwareDatetime | None = None
     estimated_minutes: int | None = Field(default=None, gt=0, le=60 * 24)
+    parent_task_id: int | None = Field(
+        default=None, gt=0, description="分解元のタスクID"
+    )
 
 
 class TaskUpdate(BaseModel):
@@ -40,6 +43,7 @@ class TaskRead(BaseModel):
     due_date: datetime | None
     estimated_minutes: int | None
     completed_at: datetime | None
+    parent_task_id: int | None
     created_at: datetime
     updated_at: datetime
 

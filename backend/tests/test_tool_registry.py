@@ -30,7 +30,7 @@ def test_specs_cover_mvp_task_tools(registry: ToolRegistry) -> None:
 
 def test_tool_count_stays_small(registry: ToolRegistry) -> None:
     """Tool が増えすぎると LLM の選択精度が落ちるため、数を抑える。"""
-    assert len(registry.specs()) == 13
+    assert len(registry.specs()) == 14
 
 
 def test_internal_tools_are_not_offered_to_the_model(registry: ToolRegistry) -> None:

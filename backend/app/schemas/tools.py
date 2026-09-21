@@ -151,3 +151,24 @@ class ApplyScheduleArgs(BaseModel):
     """承認後に予定を登録するための引数（LLM には提示しない）。"""
 
     items: list[ScheduleItemArg] = Field(min_length=1, max_length=50)
+
+
+class SubtaskArg(BaseModel):
+    """分解して作る小タスク1件。"""
+
+    title: str = Field(min_length=1, max_length=200, description="小タスクのタイトル")
+    estimated_minutes: int | None = Field(
+        default=None, gt=0, le=1440, description="所要時間（分）"
+    )
+    due_date: AwareDatetime | None = Field(
+        default=None, description=f"期限。{DATETIME_HINT}"
+    )
+
+
+class CreateSubtasksArgs(BaseModel):
+    parent_task_id: int = Field(gt=0, description="分解するタスクのID")
+    subtasks: list[SubtaskArg] = Field(
+        min_length=1,
+        max_length=15,
+        description="分解した小タスク。作業の順番に並べる",
+    )

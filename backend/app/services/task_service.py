@@ -22,6 +22,10 @@ class TaskService:
         self.repo = TaskRepository(db)
 
     def create(self, user: User, data: TaskCreate) -> Task:
+        if data.parent_task_id is not None:
+            # 他人のタスクにぶら下げられないよう存在と所有者を確認する
+            self.get(user, data.parent_task_id)
+
         task = Task(user_id=user.id, **data.model_dump())
         if task.status is TaskStatus.DONE:
             task.completed_at = datetime.now(UTC)

@@ -87,7 +87,7 @@ app/schemas/tools.py          Tool 引数の検証スキーマ
 - 削除など取り消せない操作は `needs_confirmation=True`。実行せず `pending_action` を返し、
   ユーザーが承認したら `POST /chat/confirm` で実行する（引数はそこで再検証する）。
 - エージェントループは最大 8 往復（`MAX_TOOL_ITERATIONS`）。検索→空き時間→作成の連鎖に必要。
-- Tool は13個（Task 6 / Calendar 5 / Schedule 2）。増やすと LLM の選択精度が落ちるため安易に足さない。
+- Tool は14個（Task 7 / Calendar 5 / Schedule 2）。増やすと LLM の選択精度が落ちるため安易に足さない。
 - `apply_schedule` は `exposed=False`。承認後の実行専用で LLM には見せない。
 - **スケジュールの制約（何時〜何時に入れてよいか、土日を除くか）は Backend が持つ**
   （`ScheduleConstraints` / `SCHEDULE_DAY_START_HOUR`）。LLM に決めさせない。
@@ -167,3 +167,4 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 10 複数Tool連携（エージェントループで連鎖実行）
 - [x] Phase 11 空き時間検索（find_free_time）
 - [x] Phase 12 自動スケジューリング（提案 → 承認 → 登録）
+- [x] Phase 13 タスク分解（create_subtasks / tasks.parent_task_id）

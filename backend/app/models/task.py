@@ -61,8 +61,19 @@ class Task(TimestampMixin, Base):
     estimated_minutes: Mapped[int | None] = mapped_column(Integer)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # 分解して作られた小タスクの親。親を消しても小タスクは単独で残す
+    parent_task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="SET NULL"), index=True
+    )
+
     user: Mapped["User"] = relationship(back_populates="tasks")
     events: Mapped[list["CalendarEvent"]] = relationship(back_populates="task")
+    subtasks: Mapped[list["Task"]] = relationship(
+        "Task", back_populates="parent"
+    )
+    parent: Mapped["Task | None"] = relationship(
+        "Task", back_populates="subtasks", remote_side="Task.id"
+    )
 
     __table_args__ = (
         CheckConstraint(

@@ -16,6 +16,7 @@ from app.schemas.task import TaskCreate, TaskSearchParams, TaskUpdate
 from app.schemas.tools import (
     ApplyScheduleArgs,
     CompleteTaskArgs,
+    CreateSubtasksArgs,
     FindFreeTimeArgs,
     GenerateScheduleArgs,
     CreateEventArgs,
@@ -88,6 +89,7 @@ def summarize_task(task: Task) -> dict[str, Any]:
         "priority": task.priority.value,
         "due_date": task.due_date.isoformat() if task.due_date else None,
         "estimated_minutes": task.estimated_minutes,
+        "parent_task_id": task.parent_task_id,
     }
 
 
@@ -206,6 +208,18 @@ class ToolRegistry:
                 args_model=FindFreeTimeArgs,
                 handler=self._find_free_time,
             ),
+            "create_subtasks": ToolDefinition(
+                description=(
+                    "大きなタスクを小さなタスクに分解して登録する。"
+                    "「〜を分解して」「何から始めればいい？」"
+                    "「〜までに完成させたい、必要な作業に分けて」といった依頼に使う。"
+                    "分解した内容は自分で考えて subtasks に渡す。"
+                    "登録前にユーザーの承認が必要。"
+                ),
+                args_model=CreateSubtasksArgs,
+                handler=self._create_subtasks,
+                needs_confirmation=True,
+            ),
             "generate_schedule": ToolDefinition(
                 description=(
                     "未完了タスクを空き時間へ「配置する」ツール。"
@@ -300,6 +314,9 @@ class ToolRegistry:
             task = self.tasks.get(self.user, args.task_id)
             description = f"タスク「{task.title}」を削除します。"
             done_message = f"タスク「{task.title}」を削除しました。"
+        elif name == "create_subtasks":
+            assert isinstance(args, CreateSubtasksArgs)
+            return self._propose_subtasks(args)
         elif name == "generate_schedule":
             assert isinstance(args, GenerateScheduleArgs)
             return self._propose_schedule(args)
@@ -537,6 +554,61 @@ class ToolRegistry:
     def _unreachable(self, args: BaseModel) -> ToolOutcome:  # pragma: no cover
         """承認フローを必ず通すツール用。直接は呼ばれない。"""
         raise AssertionError("このツールは確認フローを経由して実行される")
+
+
+    # ------------------------------------------------------------- タスク分解
+
+    def _propose_subtasks(self, args: CreateSubtasksArgs) -> ToolOutcome:
+        """分解案を見せて承認を求める。**この時点では登録しない。**"""
+        # 存在と所有者をここで確認する（承認を出す前に弾く）
+        parent = self.tasks.get(self.user, args.parent_task_id)
+
+        lines = [f"「{parent.title}」を次の{len(args.subtasks)}個に分解して登録します。", ""]
+        lines.extend(
+            f"  {index}. {subtask.title}"
+            + (f"（{subtask.estimated_minutes}分）" if subtask.estimated_minutes else "")
+            for index, subtask in enumerate(args.subtasks, start=1)
+        )
+
+        return ToolOutcome(
+            {
+                "status": "confirmation_required",
+                "message": "ユーザーの承認待ちです。承認されるまで登録されません。",
+                "parent": {"id": parent.id, "title": parent.title},
+                "subtasks": [subtask.title for subtask in args.subtasks],
+            },
+            pending=PendingAction(
+                tool="create_subtasks",
+                arguments=args.model_dump(mode="json"),
+                description="\n".join(lines),
+                done_message=f"{len(args.subtasks)}個のタスクを登録しました。",
+            ),
+        )
+
+    def _create_subtasks(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, CreateSubtasksArgs)
+        parent = self.tasks.get(self.user, args.parent_task_id)
+
+        created = []
+        for subtask in args.subtasks:
+            task = self.tasks.create(
+                self.user,
+                TaskCreate(
+                    title=subtask.title,
+                    estimated_minutes=subtask.estimated_minutes,
+                    # 期限の指定がなければ親の期限を引き継ぐ
+                    due_date=subtask.due_date or parent.due_date,
+                    priority=parent.priority,
+                    parent_task_id=parent.id,
+                ),
+            )
+            created.append(summarize_task(task))
+
+        return ToolOutcome(
+            {"parent_id": parent.id, "created": len(created), "tasks": created},
+            mutated=True,
+            message=f"{len(created)}個のタスクを登録しました。",
+        )
 
 
 WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]

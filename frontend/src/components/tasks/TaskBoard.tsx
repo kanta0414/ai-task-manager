@@ -6,6 +6,7 @@ import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskForm } from "@/components/tasks/TaskForm";
 import { TaskItem } from "@/components/tasks/TaskItem";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { withSubtaskOrder } from "@/lib/tasks";
 import { useTasks } from "@/store/TasksProvider";
 import type { Task } from "@/types/task";
 
@@ -49,10 +50,11 @@ export function TaskBoard() {
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {tasks.map((task) => (
+          {withSubtaskOrder(tasks).map(({ task, isSubtask }) => (
             <TaskItem
               key={task.id}
               task={task}
+              isSubtask={isSubtask}
               onToggle={() => void toggleTask(task)}
               onEdit={() => setEditing(task)}
               onDelete={() => setDeleting(task)}
