@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,6 +14,11 @@ from app.core.exceptions import (
 )
 
 settings = get_settings()
+
+# LLM がどのツールをどんな引数で呼んだかを追えるようにする
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 
 app = FastAPI(
     title="AI Task Manager API",

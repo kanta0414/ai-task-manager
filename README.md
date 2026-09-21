@@ -48,6 +48,34 @@ npm run dev
 
 Docker で DB を動かす場合は `docker compose up -d db`（ホスト側ポート 5433）。
 
+## AI アシスタント（任意）
+
+LLM が無くても通常UIだけで全機能を利用できる。AI を使う場合は次のどちらかを設定する。
+
+### ローカル LLM（Ollama / 料金なし）
+
+```bash
+ollama serve &                 # サーバー起動
+ollama pull qwen3:1.7b         # Tool Calling に対応した小型モデル（約1.4GB）
+```
+
+`backend/.env`:
+
+```
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=qwen3:1.7b
+```
+
+### Claude API（従量課金）
+
+```
+LLM_PROVIDER=claude
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-opus-5
+```
+
+APIキーは `.env` にのみ置き、Git にも Frontend にも渡さない。
+
 ## ドキュメント
 
 - [要件定義書](docs/要件定義書.md)

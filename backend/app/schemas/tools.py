@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.models.enums import TaskPriority, TaskStatus
 from app.schemas.common import AwareDatetime
 
-DATETIME_HINT = "日本時間で 'YYYY-MM-DDTHH:MM' 形式（例: 2026-09-30T23:59）"
+DATETIME_HINT = "例: 2026-09-30T23:59"
 
 
 class CreateTaskArgs(BaseModel):
@@ -73,7 +73,7 @@ class CreateEventArgs(BaseModel):
     task_id: int | None = Field(
         default=None,
         gt=0,
-        description="この予定がどのタスクの作業時間かを紐づける場合のタスクID",
+        description="既存タスクに紐づける場合のみ指定。分からなければ省略する",
     )
 
 

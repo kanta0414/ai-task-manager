@@ -88,7 +88,22 @@ app/schemas/tools.py          Tool 引数の検証スキーマ
 - `inline_refs` は JSON Schema の注釈 `title` を落とすが、`properties` の中の
   プロパティ名 `title` は残す（落とすと LLM から引数が見えなくなる）。
 
-- **既定は `LLM_PROVIDER=ollama`。** Claude へ切り替えると Anthropic API の従量課金が発生する。
+- **既定は `LLM_PROVIDER=ollama` / `qwen3:1.7b`。** Claude へ切り替えると従量課金が発生する。
+- Ollama は `ollama serve` で起動する（このマシンには公式CLIを /usr/local/lib/ollama に導入済み）。
+
+### ローカルLLMでの実測（Intel i5-7360U / 8GB）
+
+- プロンプト処理 約30 tok/s、生成 約18 tok/s。**入力トークン数が応答時間に直結する。**
+- そのため次の3点を守る:
+  1. **現在日時はシステムプロンプトに入れない。** 利用者メッセージの先頭に付ける
+     （システムプロンプト＋Tool定義を固定して Ollama のプロンプトキャッシュを効かせる。
+     これで2回目以降は 100秒 → 19秒）。
+  2. Tool のスキーマは `simplify_nullable` で削る（任意項目の `anyOf: [型, null]` と
+     `default: null`、文字数制限は LLM に渡さない）。
+  3. Tool を増やさない（11個で入力約2000トークン）。
+- `temperature=0`（Tool 選択を揺らがせない）、`num_ctx=6144`（既定4096だと溢れて切り捨てられる）、
+  `think=false`（qwen3 の思考トークンは CPU では高コスト）。
+- **1.5B 級では Tool Calling が成立しない**（qwen2.5:1.5b は Tool 1個でも呼べなかった）。
 - システムプロンプト（`app/services/chat_service.py`）には**現在日時とタイムゾーンを必ず含める**。
   「明日の14時」の解釈がここに依存する。
 - Anthropic SDK は公式の `anthropic` パッケージを使う。例外は

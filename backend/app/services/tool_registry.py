@@ -5,9 +5,9 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, NotFoundError
 from app.llm.base import ToolCall, ToolSpec
-from app.llm.schema_utils import inline_refs
+from app.llm.schema_utils import inline_refs, simplify_nullable
 from app.models.calendar_event import CalendarEvent
 from app.models.task import Task
 from app.models.user import User
@@ -149,7 +149,8 @@ class ToolRegistry:
                 description=(
                     "カレンダーに予定を作成する。"
                     "「明日の14時から2時間〜を入れて」のような依頼に使う。"
-                    "タスクの作業時間を確保する場合は task_id を指定する。"
+                    "task_id は、既存タスクの作業時間として確保する場合にだけ指定する。"
+                    "指定するidが分からなければ省略する。"
                 ),
                 args_model=CreateEventArgs,
                 handler=self._create_event,
@@ -190,7 +191,9 @@ class ToolRegistry:
             ToolSpec(
                 name=name,
                 description=definition.description,
-                input_schema=inline_refs(definition.args_model.model_json_schema()),
+                input_schema=simplify_nullable(
+                    inline_refs(definition.args_model.model_json_schema())
+                ),
             )
             for name, definition in self._definitions.items()
         ]
@@ -223,6 +226,19 @@ class ToolRegistry:
             if definition.needs_confirmation and not confirmed:
                 return self._request_confirmation(call.name, args)
             return definition.handler(args)
+        except NotFoundError as exc:
+            # LLM は id を推測しがちなので、立て直し方まで書いて返す
+            search_tool = "search_events" if "event" in call.name else "search_tasks"
+            return ToolOutcome(
+                {
+                    "error": exc.message,
+                    "next_step": (
+                        f"id を推測してはいけません。{search_tool} で対象を検索し、"
+                        "返ってきた id を使って呼び直してください。"
+                    ),
+                },
+                is_error=True,
+            )
         except AppError as exc:
             return ToolOutcome({"error": exc.message}, is_error=True)
 

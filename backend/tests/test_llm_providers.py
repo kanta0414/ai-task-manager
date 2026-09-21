@@ -157,3 +157,98 @@ def test_inline_refs_keeps_a_property_named_title() -> None:
         "description": "タイトル",
     }
     assert "title" not in resolved  # スキーマ自体の注釈は落とす
+
+
+def test_simplify_nullable_removes_null_variant() -> None:
+    """任意項目の anyOf と default:null を削り、入力トークンを減らす。"""
+    from app.llm.schema_utils import simplify_nullable
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "description": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "補足",
+            },
+            "limit": {"type": "integer", "default": 20},
+        },
+        "required": [],
+    }
+
+    simplified = simplify_nullable(schema)
+
+    assert simplified["properties"]["description"] == {
+        "type": "string",
+        "description": "補足",
+    }
+    # null 以外の既定値は LLM に有用なので残す
+    assert simplified["properties"]["limit"] == {"type": "integer", "default": 20}
+
+
+def test_simplify_nullable_keeps_property_named_anyof_safe() -> None:
+    """複数の型が本当に許される場合は anyOf を残す。"""
+    from app.llm.schema_utils import simplify_nullable
+
+    schema = {
+        "properties": {
+            "value": {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+        }
+    }
+    assert "anyOf" in simplify_nullable(schema)["properties"]["value"]
+
+
+def test_ollama_requests_are_deterministic() -> None:
+    """Tool 選択を安定させるため temperature=0 で送ること。"""
+    import httpx
+
+    from app.llm.ollama import OllamaProvider
+
+    provider = OllamaProvider(base_url="http://127.0.0.1:1", model="qwen3:1.7b")
+    captured: dict = {}
+
+    def fake_post(url, json, timeout):  # noqa: ANN001, A002
+        captured.update(json)
+        return httpx.Response(200, json={"message": {"content": "ok"}})
+
+    original = httpx.post
+    httpx.post = fake_post  # type: ignore[assignment]
+    try:
+        provider.chat([ChatMessage(role="user", content="hi")], system="s")
+    finally:
+        httpx.post = original  # type: ignore[assignment]
+
+    assert captured["options"]["temperature"] == 0
+    assert captured["options"]["num_ctx"] == 6144
+    assert captured["think"] is False
+
+
+def test_recovers_tool_call_written_as_text() -> None:
+    """小型モデルが本文に書いてしまった Tool 呼び出しを拾う。"""
+    from app.llm.ollama import recover_tool_call_from_text
+
+    call = recover_tool_call_from_text(
+        '{"name": "search_tasks", "arguments": {"statuses": ["todo"]}}'
+    )
+    assert call is not None
+    assert call.name == "search_tasks"
+    assert call.arguments == {"statuses": ["todo"]}
+
+
+def test_recovers_tool_call_inside_code_fence() -> None:
+    from app.llm.ollama import recover_tool_call_from_text
+
+    call = recover_tool_call_from_text(
+        '```json\n{"name": "create_task", "arguments": {"title": "ES"}}\n```'
+    )
+    assert call is not None
+    assert call.arguments == {"title": "ES"}
+
+
+def test_does_not_recover_from_normal_text() -> None:
+    from app.llm.ollama import recover_tool_call_from_text
+
+    assert recover_tool_call_from_text("こんにちは。お手伝いします。") is None
+    assert recover_tool_call_from_text('{"foo": 1}') is None
+    assert recover_tool_call_from_text("") is None
+    assert recover_tool_call_from_text('{"name": "x", "arguments": "壊れ"}') is None

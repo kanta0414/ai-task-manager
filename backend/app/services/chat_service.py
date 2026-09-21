@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -8,6 +9,8 @@ from app.llm.base import ChatMessage, LLMProvider, ToolCall
 from app.models.user import User
 from app.schemas.chat import ChatMessageIn
 from app.services.tool_registry import PendingAction, ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
 # 送信するトークン量を抑えるため、直近のやり取りだけを渡す
@@ -29,37 +32,60 @@ class ChatOutcome:
     pending: PendingAction | None = None
 
 
-def build_system_prompt(user: User) -> str:
-    """システムプロンプト。
+def now_in(user: User) -> datetime:
+    return datetime.now(ZoneInfo(user.timezone or get_settings().timezone))
 
-    「明日の14時」のような相対表現を LLM が正しく解釈できるよう、
-    現在日時とタイムゾーンを必ず渡す。ここが曖昧だと日時が全てずれる。
+
+def build_current_time_note(user: User) -> str:
+    """利用者の発言の先頭に付ける現在日時。
+
+    現在日時をシステムプロンプト側に置くと、分が変わるたびに
+    「システムプロンプト＋Tool定義」が別物になり、LLM 側のプロンプトキャッシュが
+    毎回捨てられる（ローカルLLMでは応答時間に直結する）。
+    固定部分と可変部分を分けるため、可変な現在日時はこちらに置く。
     """
+    now = now_in(user)
+    return f"[現在日時: {now:%Y-%m-%d} ({WEEKDAYS_JA[now.weekday()]}) {now:%H:%M}]"
+
+
+def build_system_prompt(user: User) -> str:
+    """システムプロンプト（リクエストごとに変化しない固定部分）。"""
     tz = ZoneInfo(user.timezone or get_settings().timezone)
-    now = datetime.now(tz)
-    weekday = WEEKDAYS_JA[now.weekday()]
 
     return f"""あなたは「AI Task Manager」のアシスタントです。
 ユーザーのタスクと予定の管理を手伝います。
 
-# 現在の状況
-- 現在日時: {now:%Y-%m-%d} ({weekday}) {now:%H:%M}
-- タイムゾーン: {tz.key}
+# 前提
+- タイムゾーン: {tz.key}。日時は 'YYYY-MM-DDTHH:MM' 形式で指定する。
 - ユーザー名: {user.name}
+- 現在日時は利用者の発言の先頭に [現在日時: ...] として与えられる。
 
 # 操作のルール
 - タスクや予定の操作は必ず提供されたツールを使う。
   ツールを使わずに「登録しました」などと答えてはいけない。
-- 「明日」「今週」などの相対的な表現は、上の現在日時を基準に解釈する。
+- 「明日」「今週」などの相対的な表現は、与えられた現在日時を基準に解釈する。
 - 変更・削除の対象IDが分からないときは、先に検索ツールで対象を特定する。
   候補が複数あって一つに絞れない場合は、実行せずユーザーに確認する。
 - ツールが承認待ち（confirmation_required）を返したら、勝手に再実行せず、
   ユーザーに確認を求めていることを伝える。
 - ツールの実行後は、何をしたかを1〜2文で簡潔に報告する。
 
+# 手順の例
+- 「今日のタスクを教えて」
+  → search_tasks を実行する（due_from に今日の0:00、due_to に今日の23:59）。
+    結果を見てから答える。憶測で一覧を作らない。
+- 「未完了のタスクは？」
+  → search_tasks を statuses=["todo","in_progress"] で実行する。
+- 「ESのタスクを削除して」
+  → まず search_tasks を keyword="ES" で実行して id を確認し、
+    その id で delete_task を呼ぶ。id を推測してはいけない。
+- 「明日の企業研究を18時からにして」
+  → search_events で対象の id を確認してから update_event を呼ぶ。
+
 # 応答のルール
 - 日本語で、簡潔に答える。
 - 一覧を答えるときは箇条書きにする。
+- ツールを実行していないのに「追加しました」「削除しました」と報告してはいけない。
 """
 
 
@@ -86,7 +112,12 @@ class ChatService:
         messages: list[ChatMessage] = [
             ChatMessage(role=m.role, content=m.content) for m in recent
         ]
-        messages.append(ChatMessage(role="user", content=message))
+        messages.append(
+            ChatMessage(
+                role="user",
+                content=f"{build_current_time_note(user)}\n{message}",
+            )
+        )
 
         outcome = ChatOutcome(reply="", provider=self.provider.name, model=self.provider.model)
 
@@ -106,6 +137,12 @@ class ChatService:
             )
 
             for call in result.tool_calls:
+                # LLM が何をどう呼んだかを追えるようにする（引数の誤りの調査用）
+                logger.info(
+                    "tool call: %s %s",
+                    call.name,
+                    json.dumps(call.arguments, ensure_ascii=False),
+                )
                 tool_outcome = registry.execute(call)
                 outcome.executed_tools.append(call.name)
                 outcome.mutated = outcome.mutated or tool_outcome.mutated

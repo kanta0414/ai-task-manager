@@ -60,7 +60,7 @@ def test_chat_passes_history_then_new_message(client: TestClient) -> None:
 
     sent = provider.calls[0]
     assert [m.role for m in sent] == ["user", "assistant", "user"]
-    assert sent[-1].content == "やっぱり19時からにして"
+    assert sent[-1].content.endswith("やっぱり19時からにして")
 
 
 def test_chat_truncates_long_history(client: TestClient) -> None:
@@ -284,12 +284,29 @@ def test_status_includes_hint_when_unavailable(client: TestClient) -> None:
 # --------------------------------------------------------- システムプロンプト
 
 
-def test_system_prompt_contains_current_datetime() -> None:
+def test_current_datetime_is_sent_with_the_user_message(client: TestClient) -> None:
+    """現在日時は利用者の発言側に付ける。
+
+    システムプロンプトに入れると分が変わるたびに Tool 定義まで含む前半が
+    別物になり、LLM のプロンプトキャッシュが効かなくなるため。
+    """
+    provider = FakeProvider()
+    use_provider(provider)
+
+    client.post("/chat", json={"message": "今日のタスクを教えて"})
+
+    sent = provider.calls[0][-1].content
+    now = datetime.now(ZoneInfo("Asia/Tokyo"))
+    assert sent.startswith(f"[現在日時: {now:%Y-%m-%d}")
+    assert sent.endswith("今日のタスクを教えて")
+    # 固定部分に可変の日時が混ざっていないこと
+    assert f"{now:%H:%M}" not in provider.received_system
+
+
+def test_system_prompt_contains_stable_context() -> None:
     user = User(name="かんた", email="p@example.com", timezone="Asia/Tokyo")
     prompt = build_system_prompt(user)
 
-    now = datetime.now(ZoneInfo("Asia/Tokyo"))
-    assert f"{now:%Y-%m-%d}" in prompt
     assert "Asia/Tokyo" in prompt
     assert "かんた" in prompt
 
@@ -303,3 +320,12 @@ def test_system_prompt_forbids_pretending_to_use_tools() -> None:
     user = User(name="かんた", email="p@example.com", timezone="Asia/Tokyo")
     prompt = build_system_prompt(user)
     assert "必ず提供されたツールを使う" in prompt
+
+
+def test_system_prompt_shows_search_before_destructive_action() -> None:
+    """観測された失敗（IDを推測して削除しようとする）への対策が入っていること。"""
+    user = User(name="かんた", email="p@example.com", timezone="Asia/Tokyo")
+    prompt = build_system_prompt(user)
+
+    assert "search_tasks" in prompt
+    assert "id を推測してはいけない" in prompt

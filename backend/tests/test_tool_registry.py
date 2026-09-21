@@ -293,3 +293,29 @@ def test_required_arguments_are_visible_to_the_model(registry: ToolRegistry) -> 
         properties = set(schema.get("properties", {}))
         missing = set(schema.get("required", [])) - properties
         assert not missing, f"{name} の必須引数 {missing} がスキーマに無い"
+
+
+def test_schemas_stay_compact(registry: ToolRegistry) -> None:
+    """Tool 定義が肥大すると、ローカルLLMでは応答時間に直接響く。"""
+    import json
+
+    total = sum(
+        len(json.dumps(spec.input_schema, ensure_ascii=False)) + len(spec.description)
+        for spec in registry.specs()
+    )
+    assert total < 7000, f"Tool 定義が大きすぎる: {total} 文字"
+
+    # 任意項目の null 表現が残っていないこと
+    for spec in registry.specs():
+        assert '"type": "null"' not in json.dumps(spec.input_schema, ensure_ascii=False)
+
+
+def test_not_found_error_tells_the_model_how_to_recover(registry: ToolRegistry) -> None:
+    """id を推測した LLM が自力で立て直せるよう、次の手順を返す。"""
+    outcome = registry.execute(call("update_task", task_id=1, title="x"))
+
+    assert outcome.is_error is True
+    assert "search_tasks" in outcome.content["next_step"]
+
+    event_outcome = registry.execute(call("update_event", event_id=1, title="x"))
+    assert "search_events" in event_outcome.content["next_step"]

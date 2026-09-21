@@ -18,7 +18,9 @@ def get_llm_provider() -> LLMProvider:
     match settings.llm_provider:
         case "ollama":
             return OllamaProvider(
-                base_url=settings.ollama_base_url, model=settings.ollama_model
+                base_url=settings.ollama_base_url,
+                model=settings.ollama_model,
+                num_ctx=settings.ollama_num_ctx,
             )
         case "claude":
             return ClaudeProvider(

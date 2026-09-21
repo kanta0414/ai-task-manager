@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     claude_model: str = "claude-opus-5"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5:7b"
+    ollama_model: str = "qwen3:1.7b"
+    # Tool 定義と履歴が入る余裕を持たせる（既定の 4096 だと溢れる）
+    ollama_num_ctx: int = 6144
 
     @property
     def cors_origin_list(self) -> list[str]:
