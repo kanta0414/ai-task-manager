@@ -33,6 +33,13 @@ LLM Tool ┘
 ## コマンド
 
 ```bash
+# Celery（バックグラウンド処理。macOS では --pool=solo が必要）
+cd backend
+./.venv/bin/celery -A app.worker.celery_app worker --loglevel=info --pool=solo
+./.venv/bin/celery -A app.worker.celery_app beat --loglevel=info
+```
+
+```bash
 # Backend（必ず backend/ で実行）
 cd backend
 ./.venv/bin/uvicorn app.main:app --reload --port 8000   # 起動 → http://localhost:8000/docs
@@ -67,6 +74,7 @@ GET    /conversations      GET /conversations/{id}    DELETE /conversations/{id}
 GET    /schedule/free-time（空き時間を探す）
 GET    /schedule/plan（未完了タスクを配置した案。登録はしない）
 GET    /schedule/reschedule-plan（やり残しの組み直し案。反映はしない）
+GET    /notifications        POST /notifications/{id}/read
 ```
 
 ## LLM
@@ -123,6 +131,19 @@ app/schemas/tools.py          Tool 引数の検証スキーマ
   AuthenticationError → NotFoundError → RateLimitError → APIStatusError → APIConnectionError
   の順に個別に捕捉し、`LLMUnavailableError`(503) / `LLMError`(502) に変換する。
 
+## 非同期処理
+
+```
+app/worker/celery_app.py  Celery アプリと beat スケジュール
+app/worker/tasks.py       定期タスク（セッションを用意して Service を呼ぶだけ）
+```
+
+- **処理の中身は `NotificationService` に置く。** タスク側を薄く保つことで、
+  ブローカー無しでもテストできる。
+- 通知の重複は DB の一意制約（user_id, dedup_key）で防ぐ。
+  5分ごとに実行されても同じ予定の通知は増えない。
+- ブローカーは `CELERY_BROKER_URL`。Redis が無い環境では `filesystem://` に切り替え可能。
+
 ## Frontend 構成
 
 ```
@@ -172,3 +193,4 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 12 自動スケジューリング（提案 → 承認 → 登録）
 - [x] Phase 13 タスク分解（create_subtasks / tasks.parent_task_id）
 - [x] Phase 14 未完了タスクの再配置（reschedule_unfinished）
+- [x] Phase 15 Celery / Redis（リマインダー・朝のまとめ・やり残し確認）

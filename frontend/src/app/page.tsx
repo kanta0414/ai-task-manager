@@ -1,5 +1,6 @@
 import { WeekCalendar } from "@/components/calendar/WeekCalendar";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import { NotificationBar } from "@/components/notifications/NotificationBar";
 import { TaskBoard } from "@/components/tasks/TaskBoard";
 import { EventsProvider } from "@/store/EventsProvider";
 import { TasksProvider } from "@/store/TasksProvider";
@@ -13,6 +14,8 @@ export default function Home() {
           通常UIとAIアシスタントの両方から操作できるタスク・スケジュール管理
         </p>
       </header>
+
+      <NotificationBar />
 
       {/* AI が操作した結果をタスク一覧とカレンダーへ反映できるよう、
           チャットも同じ Provider の内側に置く（Phase 6 で refresh を呼ぶ） */}

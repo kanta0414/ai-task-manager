@@ -22,3 +22,14 @@ class MessageRole(StrEnum):
 
     USER = "user"
     ASSISTANT = "assistant"
+
+
+class NotificationKind(StrEnum):
+    """通知の種類。"""
+
+    #: 予定の開始が近い
+    REMINDER = "reminder"
+    #: 朝の予定・タスクのまとめ
+    DAILY_DIGEST = "daily_digest"
+    #: 終わらなかった作業の組み直し提案
+    UNFINISHED = "unfinished"

@@ -4,7 +4,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routers import chat, conversations, events, health, schedule, tasks
+from app.api.routers import (
+    chat,
+    conversations,
+    events,
+    health,
+    notifications,
+    schedule,
+    tasks,
+)
 from app.core.config import get_settings
 from app.core.exceptions import (
     BusinessRuleError,
@@ -43,6 +51,7 @@ app.include_router(events.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(schedule.router)
+app.include_router(notifications.router)
 
 
 # Service Layer のドメイン例外を HTTP へ変換する。

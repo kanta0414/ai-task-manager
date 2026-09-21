@@ -76,6 +76,28 @@ CLAUDE_MODEL=claude-opus-5
 
 APIキーは `.env` にのみ置き、Git にも Frontend にも渡さない。
 
+## バックグラウンド処理（任意）
+
+リマインダーと定期処理を動かす場合のみ必要。起動しなくてもアプリは使える。
+
+```bash
+cd backend
+./.venv/bin/celery -A app.worker.celery_app worker --loglevel=info --pool=solo
+./.venv/bin/celery -A app.worker.celery_app beat --loglevel=info
+```
+
+| 定期処理 | タイミング | 内容 |
+| --- | --- | --- |
+| リマインダー | 5分ごと | 30分以内に始まる予定を通知 |
+| 今日のまとめ | 毎朝 7:00 | その日の予定と期限のタスクを通知 |
+| やり残し確認 | 毎晩 23:00 | 終わらなかった作業を通知 |
+
+ブローカーは既定で Redis（`CELERY_BROKER_URL`）。Redis を用意できない環境では
+`CELERY_BROKER_URL=filesystem://` に切り替えるとインストール無しで動く（開発用）。
+
+**macOS では `--pool=solo` を付ける。** 既定の prefork プールは macOS の
+プロセス起動方式と相性が悪く、`not enough values to unpack` で失敗する。
+
 ## ドキュメント
 
 - [要件定義書](docs/要件定義書.md)

@@ -26,6 +26,10 @@ yarn-error.log*
 .vscode/
 .idea/
 
+# Celery（開発用ブローカーとスケジューラの状態）
+.celery-broker/
+celerybeat-schedule*
+
 # Build / misc
 dist/
 build/

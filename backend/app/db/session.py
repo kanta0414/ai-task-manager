@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,6 +14,16 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 def get_db() -> Generator[Session, None, None]:
     """FastAPI の依存性注入用。通常UI・LLM Tool の両方がこのセッションを通る。"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def session_scope() -> Generator[Session, None, None]:
+    """リクエスト外（定期実行など）で使うセッション。"""
     db = SessionLocal()
     try:
         yield db

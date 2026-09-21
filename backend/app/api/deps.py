@@ -10,6 +10,7 @@ from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
 from app.services.tool_registry import ToolRegistry
 from app.services.event_service import EventService
+from app.services.notification_service import NotificationService
 from app.services.schedule_service import ScheduleService
 from app.services.task_service import TaskService
 from app.services.user_service import get_or_create_default_user
@@ -69,3 +70,12 @@ def get_schedule_service(db: DbSession) -> ScheduleService:
 
 
 ScheduleServiceDep = Annotated[ScheduleService, Depends(get_schedule_service)]
+
+
+def get_notification_service(db: DbSession) -> NotificationService:
+    return NotificationService(db)
+
+
+NotificationServiceDep = Annotated[
+    NotificationService, Depends(get_notification_service)
+]

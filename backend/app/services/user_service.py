@@ -24,3 +24,8 @@ def get_or_create_default_user(db: Session) -> User:
         db.commit()
         db.refresh(user)
     return user
+
+
+def list_users(db: Session) -> list[User]:
+    """全ユーザー。定期実行から使う。"""
+    return list(db.execute(select(User).order_by(User.id)).scalars().all())

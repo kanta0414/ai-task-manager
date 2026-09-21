@@ -56,6 +56,25 @@ class EventRepository:
         stmt = stmt.limit(params.limit).offset(params.offset)
         return list(self.db.execute(stmt).scalars().all())
 
+    def starting_between(
+        self, user_id: int, start: datetime, end: datetime
+    ) -> list[CalendarEvent]:
+        """開始時刻がこの範囲に入る予定（リマインダー用）。
+
+        search() は「期間に重なる予定」を返すので、既に始まっている予定も
+        含まれてしまう。通知は「これから始まるもの」だけにしたい。
+        """
+        stmt = (
+            select(CalendarEvent)
+            .where(
+                CalendarEvent.user_id == user_id,
+                CalendarEvent.start_at >= start,
+                CalendarEvent.start_at <= end,
+            )
+            .order_by(CalendarEvent.start_at)
+        )
+        return list(self.db.execute(stmt).scalars().all())
+
     def past_events_of_unfinished_tasks(
         self, user_id: int, before: datetime
     ) -> list[CalendarEvent]:

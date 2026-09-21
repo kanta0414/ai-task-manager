@@ -13,6 +13,10 @@ alembic==1.16.5
 pytest==8.4.2
 httpx==0.28.1
 
+# --- 非同期処理 ---
+celery==5.5.3
+redis==6.4.0
+
 # --- LLM ---
 # Claude API 用の公式SDK。既定では呼び出さない（LLM_PROVIDER=ollama）
 anthropic==1.7.0

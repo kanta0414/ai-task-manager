@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://kanta@localhost:5432/ai_task_manager"
     cors_origins: str = "http://localhost:3000"
 
+    # 非同期処理（Celery）
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = ""
+    # filesystem ブローカーを使う場合の置き場所（Redis が無い環境向け）
+    celery_broker_folder: str = ".celery-broker"
+
     # 自動スケジューリングの制約。LLM ではなく Backend が持つルール
     schedule_day_start_hour: int = 9
     schedule_day_end_hour: int = 22

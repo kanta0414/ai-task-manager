@@ -6,7 +6,13 @@ Alembic の autogenerate はここで import されたモデルを対象にす�
 
 from app.models.calendar_event import CalendarEvent
 from app.models.conversation import Conversation, Message
-from app.models.enums import MessageRole, TaskPriority, TaskStatus
+from app.models.enums import (
+    MessageRole,
+    NotificationKind,
+    TaskPriority,
+    TaskStatus,
+)
+from app.models.notification import Notification
 from app.models.task import Task
 from app.models.user import User
 
@@ -15,6 +21,8 @@ __all__ = [
     "Conversation",
     "Message",
     "MessageRole",
+    "Notification",
+    "NotificationKind",
     "Task",
     "TaskPriority",
     "TaskStatus",
