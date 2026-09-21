@@ -56,7 +56,7 @@ class ConversationService:
         return [
             ChatMessage(role=message.role.value, content=message.content)
             for message in self.repo.recent_messages(
-                conversation.id, MAX_HISTORY_MESSAGES
+                conversation.id, conversation.user_id, MAX_HISTORY_MESSAGES
             )
         ]
 

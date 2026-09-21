@@ -42,11 +42,21 @@ class ConversationRepository:
         self.db.flush()
         return message
 
-    def recent_messages(self, conversation_id: int, limit: int) -> list[Message]:
-        """直近 limit 件を古い順で返す。"""
+    def recent_messages(
+        self, conversation_id: int, user_id: int, limit: int
+    ) -> list[Message]:
+        """直近 limit 件を古い順で返す。
+
+        呼び出し側で所有者を確認済みでも、ここでも会話の持ち主を条件に入れる
+        （新しい呼び出しが増えたときに他人の発言が漏れないようにするため）。
+        """
         stmt = (
             select(Message)
-            .where(Message.conversation_id == conversation_id)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Conversation.user_id == user_id,
+            )
             .order_by(Message.id.desc())
             .limit(limit)
         )

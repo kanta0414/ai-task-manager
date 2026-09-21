@@ -4,14 +4,14 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.enums import TaskPriority, TaskStatus
-from app.schemas.common import AwareDatetime
+from app.schemas.common import MAX_DESCRIPTION, AwareDatetime
 
 
 class TaskCreate(BaseModel):
     """タスク作成の入力。通常UI と LLM Tool の両方がこのスキーマで検証される。"""
 
     title: str = Field(min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION)
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: AwareDatetime | None = None
@@ -25,7 +25,7 @@ class TaskUpdate(BaseModel):
     """部分更新。未指定の項目は変更しない（null を明示すればクリアできる）。"""
 
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION)
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     due_date: AwareDatetime | None = None

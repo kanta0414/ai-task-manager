@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.common import AwareDatetime
+from app.schemas.common import MAX_DESCRIPTION, AwareDatetime
 from app.schemas.task import SortOrder
 
 
@@ -10,7 +10,7 @@ class EventCreate(BaseModel):
     """予定作成の入力。end_at > start_at の検証は Service Layer で行う。"""
 
     title: str = Field(min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION)
     start_at: AwareDatetime
     end_at: AwareDatetime
     location: str | None = Field(default=None, max_length=255)
@@ -22,7 +22,7 @@ class EventUpdate(BaseModel):
     """部分更新。未指定の項目は変更しない。"""
 
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION)
     start_at: AwareDatetime | None = None
     end_at: AwareDatetime | None = None
     location: str | None = Field(default=None, max_length=255)

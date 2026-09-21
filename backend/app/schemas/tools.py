@@ -8,14 +8,16 @@ LLM の出力は信用せず、必ずここで型・日時・範囲を検証し�
 from pydantic import BaseModel, Field
 
 from app.models.enums import TaskPriority, TaskStatus
-from app.schemas.common import AwareDatetime
+from app.schemas.common import MAX_DESCRIPTION, AwareDatetime
 
 DATETIME_HINT = "例: 2026-09-30T23:59"
 
 
 class CreateTaskArgs(BaseModel):
     title: str = Field(min_length=1, max_length=200, description="タスクのタイトル")
-    description: str | None = Field(default=None, description="補足説明")
+    description: str | None = Field(
+        default=None, max_length=MAX_DESCRIPTION, description="補足説明"
+    )
     due_date: AwareDatetime | None = Field(default=None, description=f"期限。{DATETIME_HINT}")
     priority: TaskPriority = Field(default=TaskPriority.MEDIUM, description="優先度")
     estimated_minutes: int | None = Field(
@@ -49,7 +51,7 @@ class SearchTasksArgs(BaseModel):
 class UpdateTaskArgs(BaseModel):
     task_id: int = Field(gt=0, description="変更するタスクのID")
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = None
+    description: str | None = Field(default=None, max_length=MAX_DESCRIPTION)
     due_date: AwareDatetime | None = Field(default=None, description=f"新しい期限。{DATETIME_HINT}")
     priority: TaskPriority | None = None
     status: TaskStatus | None = None
@@ -68,7 +70,9 @@ class CreateEventArgs(BaseModel):
     title: str = Field(min_length=1, max_length=200, description="予定のタイトル")
     start_at: AwareDatetime = Field(description=f"開始日時。{DATETIME_HINT}")
     end_at: AwareDatetime = Field(description=f"終了日時。{DATETIME_HINT}")
-    description: str | None = Field(default=None, description="メモ")
+    description: str | None = Field(
+        default=None, max_length=MAX_DESCRIPTION, description="メモ"
+    )
     location: str | None = Field(default=None, max_length=255, description="場所")
     task_id: int | None = Field(
         default=None,

@@ -19,3 +19,7 @@ def _ensure_aware(value: datetime) -> datetime:
 
 
 AwareDatetime = Annotated[datetime, AfterValidator(_ensure_aware)]
+
+
+#: 説明文の長さ上限。DBの型は無制限のため、入口で歯止めをかける
+MAX_DESCRIPTION = 5000

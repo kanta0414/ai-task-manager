@@ -40,10 +40,33 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Cookie を使っていないので資格情報は許可しない。
+    # 認証（Phase 16）で Cookie を使うようになったら True にする
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
+
+#: リクエスト本文の上限。Pydantic の検証は本文を読み込んだ後に効くため、
+#: その手前で大きすぎるリクエストを落とす
+MAX_REQUEST_BYTES = 1_000_000
+
+
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):  # noqa: ANN001, ANN201
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > MAX_REQUEST_BYTES:
+                return JSONResponse(
+                    status_code=413, content={"detail": "リクエストが大きすぎます。"}
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400, content={"detail": "Content-Length が不正です。"}
+            )
+    return await call_next(request)
+
 
 app.include_router(health.router)
 app.include_router(tasks.router)

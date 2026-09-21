@@ -175,8 +175,15 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 
 ## セキュリティ
 
+詳細は `docs/セキュリティ.md`。守るべき要点:
+
 - `.env` は Git 管理しない。APIキーはフロントエンドへ渡さない（`NEXT_PUBLIC_` に入れない）。
 - LLM プロバイダ呼び出しは backend のみ。
+- **Repository の問い合わせには必ず `user_id` 条件を入れる。** 呼び出し側で確認済みでも入れる。
+  他人のデータは 403 ではなく 404 を返す（存在を漏らさない）。
+- **ToolRegistry から直接DBを触らない。** テストで検証している。
+- 文字列入力には必ず長さ上限を付ける（`description` は `MAX_DESCRIPTION`）。
+- リクエスト本文は 1MB まで（`MAX_REQUEST_BYTES`）。
 
 ## 進捗
 
@@ -194,3 +201,4 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 13 タスク分解（create_subtasks / tasks.parent_task_id）
 - [x] Phase 14 未完了タスクの再配置（reschedule_unfinished）
 - [x] Phase 15 Celery / Redis（リマインダー・朝のまとめ・やり残し確認）
+- [x] Phase 19 セキュリティ監査（docs/セキュリティ.md に記録）
