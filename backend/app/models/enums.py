@@ -15,3 +15,10 @@ class TaskPriority(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class MessageRole(StrEnum):
+    """会話メッセージの発言者。"""
+
+    USER = "user"
+    ASSISTANT = "assistant"

@@ -62,7 +62,8 @@ GET    /tasks/{id}         PATCH /tasks/{id}      DELETE /tasks/{id}
 POST   /tasks/{id}/complete , /tasks/{id}/reopen
 POST   /events             GET /events（from/to/keyword/task_id/order/limit/offset）
 GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
-POST   /chat               GET /chat/status
+POST   /chat（conversation_id 省略で新規会話）   POST /chat/confirm   GET /chat/status
+GET    /conversations      GET /conversations/{id}    DELETE /conversations/{id}
 ```
 
 ## LLM
@@ -88,6 +89,8 @@ app/schemas/tools.py          Tool 引数の検証スキーマ
 - `inline_refs` は JSON Schema の注釈 `title` を落とすが、`properties` の中の
   プロパティ名 `title` は残す（落とすと LLM から引数が見えなくなる）。
 
+- 会話履歴は **DB（conversations / messages）が持つ**。クライアントは会話IDだけを渡す。
+  LLM へ渡す現在日時は保存しない（表示にも次回の履歴にも不要なため）。
 - **既定は `LLM_PROVIDER=ollama` / `qwen3:1.7b`。** Claude へ切り替えると従量課金が発生する。
 - Ollama は `ollama serve` で起動する（このマシンには公式CLIを /usr/local/lib/ollama に導入済み）。
 
@@ -153,4 +156,5 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 4 カレンダーUI ← **Milestone 1: LLMなしで完成したタスク管理アプリ**
 - [x] Phase 5 LLM基盤（Provider抽象化 / POST /chat / AIチャットUI）※実LLM未接続
 - [x] Phase 6 Tool Calling（Task 6種 + Calendar 5種 + 確認フロー）※実LLM未接続
-- [ ] Phase 9 会話コンテキスト / Phase 10-12 複数Tool連携・空き時間・自動スケジューリング
+- [x] Phase 9 会話コンテキスト（conversations / messages にDB保存）
+- [ ] Phase 10-12 複数Tool連携・空き時間・自動スケジューリング

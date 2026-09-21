@@ -5,8 +5,18 @@ Alembic の autogenerate はここで import されたモデルを対象にす�
 """
 
 from app.models.calendar_event import CalendarEvent
-from app.models.enums import TaskPriority, TaskStatus
+from app.models.conversation import Conversation, Message
+from app.models.enums import MessageRole, TaskPriority, TaskStatus
 from app.models.task import Task
 from app.models.user import User
 
-__all__ = ["CalendarEvent", "Task", "TaskPriority", "TaskStatus", "User"]
+__all__ = [
+    "CalendarEvent",
+    "Conversation",
+    "Message",
+    "MessageRole",
+    "Task",
+    "TaskPriority",
+    "TaskStatus",
+    "User",
+]

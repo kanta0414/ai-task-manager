@@ -10,7 +10,13 @@ import {
 } from "react";
 
 import { ApiError } from "@/lib/api";
-import { confirmAction, fetchChatStatus, sendChat } from "@/lib/chat";
+import {
+  confirmAction,
+  deleteConversation,
+  fetchChatStatus,
+  fetchConversation,
+  sendChat,
+} from "@/lib/chat";
 import { useEvents } from "@/store/EventsProvider";
 import { useTasks } from "@/store/TasksProvider";
 import type { ChatMessage, ChatResponse, ChatStatus, PendingAction } from "@/types/chat";
@@ -19,6 +25,28 @@ const SUGGESTIONS = [
   "今日のタスクを教えて",
   "明日の14時から2時間、企業研究を入れて",
 ];
+
+/** 直近の会話IDの置き場所。会話の中身はサーバーにあり、ここは目印だけ。 */
+const CONVERSATION_KEY = "ai-task-manager.conversation-id";
+
+function readStoredConversationId(): number | null {
+  try {
+    const raw = window.localStorage.getItem(CONVERSATION_KEY);
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeConversationId(id: number | null): void {
+  try {
+    if (id === null) window.localStorage.removeItem(CONVERSATION_KEY);
+    else window.localStorage.setItem(CONVERSATION_KEY, String(id));
+  } catch {
+    // プライベートウィンドウなどで使えなくても動作に影響させない
+  }
+}
 
 export function ChatPanel() {
   const { refresh: refreshTasks } = useTasks();
@@ -30,6 +58,7 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [conversationId, setConversationId] = useState<number | null>(null);
 
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -37,6 +66,24 @@ export function ChatPanel() {
     fetchChatStatus()
       .then(setStatus)
       .catch(() => setStatus(null));
+  }, []);
+
+  // リロードしても直前の会話から続けられるよう、保存済みの会話を読み直す
+  useEffect(() => {
+    const storedId = readStoredConversationId();
+    if (storedId === null) return;
+
+    fetchConversation(storedId)
+      .then((conversation) => {
+        setConversationId(conversation.id);
+        setMessages(
+          conversation.messages.map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+        );
+      })
+      .catch(() => storeConversationId(null));
   }, []);
 
   // 新しい発言が増えたら最下部へ
@@ -51,6 +98,8 @@ export function ChatPanel() {
         ...current,
         { role: "assistant", content: response.reply },
       ]);
+      setConversationId(response.conversation_id);
+      storeConversationId(response.conversation_id);
       setPending(response.pending_action);
       if (response.mutated) {
         void refreshTasks();
@@ -72,15 +121,14 @@ export function ChatPanel() {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
 
-    const history = messages;
-    setMessages([...history, { role: "user", content: trimmed }]);
+    setMessages((current) => [...current, { role: "user", content: trimmed }]);
     setInput("");
     setSending(true);
     setError(null);
     setPending(null);
 
     try {
-      applyResponse(await sendChat(trimmed, history));
+      applyResponse(await sendChat(trimmed, conversationId));
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -88,15 +136,32 @@ export function ChatPanel() {
     }
   };
 
+  const startNewConversation = async (deleteCurrent: boolean) => {
+    const current = conversationId;
+    setMessages([]);
+    setPending(null);
+    setError(null);
+    setConversationId(null);
+    storeConversationId(null);
+
+    if (deleteCurrent && current !== null) {
+      try {
+        await deleteConversation(current);
+      } catch {
+        setError("前の会話を削除できませんでした。");
+      }
+    }
+  };
+
   const runPending = async () => {
-    if (!pending || sending) return;
+    if (!pending || sending || conversationId === null) return;
     setSending(true);
     setError(null);
     const action = pending;
     setPending(null);
 
     try {
-      applyResponse(await confirmAction(action));
+      applyResponse(await confirmAction(conversationId, action));
     } catch (caught) {
       handleFailure(caught);
     } finally {
@@ -131,12 +196,32 @@ export function ChatPanel() {
     <section className="mt-8 flex flex-col rounded-lg border border-border bg-surface">
       <header className="flex items-center justify-between border-b border-border px-4 py-2">
         <h2 className="text-sm font-semibold">AI Assistant</h2>
-        {status && (
-          <span className="text-[11px] text-muted">
-            {status.provider} / {status.model}
-            {!status.available && "（未接続）"}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {status && (
+            <span className="text-[11px] text-muted">
+              {status.provider} / {status.model}
+              {!status.available && "（未接続）"}
+            </span>
+          )}
+          {messages.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={() => void startNewConversation(false)}
+                className="rounded-md border border-border px-2 py-1 text-[11px] hover:bg-background"
+              >
+                新しい会話
+              </button>
+              <button
+                type="button"
+                onClick={() => void startNewConversation(true)}
+                className="rounded-md px-2 py-1 text-[11px] text-red-600 hover:bg-background"
+              >
+                この会話を削除
+              </button>
+            </>
+          )}
+        </div>
       </header>
 
       {status && !status.available && status.hint && (

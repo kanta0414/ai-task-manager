@@ -16,6 +16,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 def _to_response(outcome: ChatOutcome) -> ChatResponse:
     return ChatResponse(
+        conversation_id=outcome.conversation_id,
         reply=outcome.reply,
         provider=outcome.provider,
         model=outcome.model,
@@ -40,7 +41,9 @@ def chat(
     service: ChatServiceDep,
     registry: ToolRegistryDep,
 ) -> ChatResponse:
-    return _to_response(service.reply(user, payload.message, payload.history, registry))
+    return _to_response(
+        service.reply(user, payload.message, payload.conversation_id, registry)
+    )
 
 
 @router.post("/confirm", response_model=ChatResponse)
@@ -57,7 +60,11 @@ def confirm(
         description=payload.description,
         done_message=payload.description.replace("します。", "しました。"),
     )
-    return _to_response(service.execute_confirmed(action, registry))
+    return _to_response(
+        service.execute_confirmed(
+            user, payload.conversation_id, action, registry
+        )
+    )
 
 
 @router.get("/status", response_model=ChatStatus)

@@ -5,6 +5,23 @@ export type ChatMessage = {
   content: string;
 };
 
+/** サーバーに保存された発言。 */
+export type StoredMessage = ChatMessage & {
+  id: number;
+  created_at: string;
+};
+
+export type Conversation = {
+  id: number;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ConversationDetail = Conversation & {
+  messages: StoredMessage[];
+};
+
 /** ユーザーの承認を待っている操作（削除など）。 */
 export type PendingAction = {
   tool: string;
@@ -13,6 +30,7 @@ export type PendingAction = {
 };
 
 export type ChatResponse = {
+  conversation_id: number;
   reply: string;
   provider: string;
   model: string;

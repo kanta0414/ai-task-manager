@@ -7,20 +7,19 @@ from zoneinfo import ZoneInfo
 from app.core.config import get_settings
 from app.llm.base import ChatMessage, LLMProvider, ToolCall
 from app.models.user import User
-from app.schemas.chat import ChatMessageIn
+from app.services.conversation_service import ConversationService
 from app.services.tool_registry import PendingAction, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
 WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
-# 送信するトークン量を抑えるため、直近のやり取りだけを渡す
-MAX_HISTORY_MESSAGES = 20
 # ツール呼び出しの往復が無限に続かないようにする
 MAX_TOOL_ITERATIONS = 5
 
 
 @dataclass
 class ChatOutcome:
+    conversation_id: int
     reply: str
     provider: str
     model: str
@@ -95,23 +94,26 @@ class ChatService:
     プロバイダの違い（Claude / Ollama）はここから見えない。
     """
 
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(
+        self, provider: LLMProvider, conversations: ConversationService
+    ) -> None:
         self.provider = provider
+        self.conversations = conversations
 
     def reply(
         self,
         user: User,
         message: str,
-        history: list[ChatMessageIn],
+        conversation_id: int | None,
         registry: ToolRegistry,
     ) -> ChatOutcome:
+        conversation = self.conversations.get_or_create(user, conversation_id)
         system = build_system_prompt(user)
         tools = registry.specs()
 
-        recent = history[-MAX_HISTORY_MESSAGES:]
-        messages: list[ChatMessage] = [
-            ChatMessage(role=m.role, content=m.content) for m in recent
-        ]
+        # 履歴はDBから読む。「やっぱり19時からにして」のような指示で
+        # 直前の対象を引き継げるようにするため。
+        messages = self.conversations.history_for_llm(conversation)
         messages.append(
             ChatMessage(
                 role="user",
@@ -119,13 +121,19 @@ class ChatService:
             )
         )
 
-        outcome = ChatOutcome(reply="", provider=self.provider.name, model=self.provider.model)
+        outcome = ChatOutcome(
+            conversation_id=conversation.id,
+            reply="",
+            provider=self.provider.name,
+            model=self.provider.model,
+        )
 
         for _ in range(MAX_TOOL_ITERATIONS):
             result = self.provider.chat(messages, system=system, tools=tools)
             outcome.reply = result.content
 
             if not result.tool_calls:
+                self.conversations.record_exchange(conversation, message, outcome.reply)
                 return outcome
 
             messages.append(
@@ -151,6 +159,9 @@ class ChatService:
                     # 承認が必要な操作。ここで打ち切り、ユーザーの判断を待つ
                     outcome.pending = tool_outcome.pending
                     outcome.reply = result.content or tool_outcome.pending.description
+                    self.conversations.record_exchange(
+                        conversation, message, outcome.reply
+                    )
                     return outcome
 
                 messages.append(_tool_message(call, tool_outcome.content, tool_outcome.is_error))
@@ -159,10 +170,15 @@ class ChatService:
             "操作を完了できませんでした。手順が多すぎるようなので、"
             "もう少し小さく分けて指示してください。"
         )
+        self.conversations.record_exchange(conversation, message, outcome.reply)
         return outcome
 
     def execute_confirmed(
-        self, action: PendingAction, registry: ToolRegistry
+        self,
+        user: User,
+        conversation_id: int,
+        action: PendingAction,
+        registry: ToolRegistry,
     ) -> ChatOutcome:
         """ユーザーが承認した操作を実行する。
 
@@ -170,6 +186,7 @@ class ChatService:
         引数は registry 側で再検証されるので、クライアントから返ってきた値を
         そのまま信用するわけではない。
         """
+        conversation = self.conversations.get(user, conversation_id)
         call = ToolCall(id="confirmed", name=action.tool, arguments=action.arguments)
         tool_outcome = registry.execute(call, confirmed=True)
 
@@ -181,7 +198,10 @@ class ChatService:
         else:
             reply = action.done_message
 
+        self.conversations.record_assistant_message(conversation, reply)
+
         return ChatOutcome(
+            conversation_id=conversation.id,
             reply=reply,
             provider=self.provider.name,
             model=self.provider.model,

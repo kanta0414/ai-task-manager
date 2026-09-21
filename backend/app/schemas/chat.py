@@ -1,18 +1,16 @@
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ChatMessageIn(BaseModel):
-    role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=4000)
-
-
 class ChatRequest(BaseModel):
-    """会話履歴は Phase 9 でDBに保存する。それまではクライアントから受け取る。"""
+    """会話履歴はサーバー側（conversations / messages）で管理する。
+
+    conversation_id を省略すると新しい会話を開始する。
+    """
 
     message: str = Field(min_length=1, max_length=4000)
-    history: list[ChatMessageIn] = Field(default_factory=list, max_length=40)
+    conversation_id: int | None = Field(default=None, gt=0)
 
 
 class PendingActionOut(BaseModel):
@@ -24,6 +22,7 @@ class PendingActionOut(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    conversation_id: int
     reply: str
     provider: str
     model: str
@@ -40,6 +39,7 @@ class ChatConfirmRequest(BaseModel):
     引数は Backend 側で再検証・権限確認されるため、そのまま信用はしない。
     """
 
+    conversation_id: int = Field(gt=0)
     tool: str = Field(min_length=1, max_length=64)
     arguments: dict[str, Any]
     description: str = Field(min_length=1, max_length=200)

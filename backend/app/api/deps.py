@@ -7,6 +7,7 @@ from app.db.session import get_db
 from app.llm.factory import get_llm_provider
 from app.models.user import User
 from app.services.chat_service import ChatService
+from app.services.conversation_service import ConversationService
 from app.services.tool_registry import ToolRegistry
 from app.services.event_service import EventService
 from app.services.task_service import TaskService
@@ -40,8 +41,15 @@ def get_event_service(db: DbSession) -> EventService:
 EventServiceDep = Annotated[EventService, Depends(get_event_service)]
 
 
-def get_chat_service() -> ChatService:
-    return ChatService(get_llm_provider())
+def get_conversation_service(db: DbSession) -> ConversationService:
+    return ConversationService(db)
+
+
+ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
+
+
+def get_chat_service(conversations: ConversationServiceDep) -> ChatService:
+    return ChatService(get_llm_provider(), conversations)
 
 
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]

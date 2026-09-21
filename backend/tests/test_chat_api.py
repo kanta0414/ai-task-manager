@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_chat_service
+from app.api.deps import ConversationServiceDep, get_chat_service
 from app.core.exceptions import LLMError, LLMUnavailableError
 from app.llm.base import ChatResult, ToolCall
 from app.main import app
@@ -15,7 +15,12 @@ from tests.fakes import FakeProvider
 
 
 def use_provider(provider: FakeProvider) -> None:
-    app.dependency_overrides[get_chat_service] = lambda: ChatService(provider)
+    """差し替え側も FastAPI の依存解決を通し、テスト用DBセッションを共有する。"""
+
+    def factory(conversations: ConversationServiceDep) -> ChatService:
+        return ChatService(provider, conversations)
+
+    app.dependency_overrides[get_chat_service] = factory
 
 
 @pytest.fixture(autouse=True)
@@ -43,39 +48,63 @@ def test_chat_returns_reply(client: TestClient) -> None:
     assert body["pending_action"] is None
 
 
-def test_chat_passes_history_then_new_message(client: TestClient) -> None:
-    provider = FakeProvider()
+def test_conversation_continues_across_requests(client: TestClient) -> None:
+    """2回目の発言で、直前のやり取りが LLM に渡ること（要件22）。"""
+    provider = FakeProvider(
+        [
+            reply("18時から20時に変更しました。"),
+            reply("19時から21時に変更しました。"),
+        ]
+    )
     use_provider(provider)
+
+    first = client.post(
+        "/chat", json={"message": "明日の企業研究を18時からにして"}
+    ).json()
+    conversation_id = first["conversation_id"]
 
     client.post(
         "/chat",
-        json={
-            "message": "やっぱり19時からにして",
-            "history": [
-                {"role": "user", "content": "明日の企業研究を18時からにして"},
-                {"role": "assistant", "content": "18時から20時に変更しました。"},
-            ],
-        },
+        json={"message": "やっぱり19時からにして", "conversation_id": conversation_id},
     )
 
-    sent = provider.calls[0]
+    sent = provider.calls[1]
     assert [m.role for m in sent] == ["user", "assistant", "user"]
+    assert "明日の企業研究を18時からにして" in sent[0].content
+    assert sent[1].content == "18時から20時に変更しました。"
     assert sent[-1].content.endswith("やっぱり19時からにして")
 
 
+def test_new_conversation_is_created_without_id(client: TestClient) -> None:
+    use_provider(FakeProvider())
+
+    first = client.post("/chat", json={"message": "こんにちは"}).json()
+    second = client.post("/chat", json={"message": "こんにちは"}).json()
+
+    assert first["conversation_id"] != second["conversation_id"]
+
+
+def test_unknown_conversation_returns_404(client: TestClient) -> None:
+    use_provider(FakeProvider())
+    res = client.post("/chat", json={"message": "hi", "conversation_id": 999999})
+    assert res.status_code == 404
+
+
 def test_chat_truncates_long_history(client: TestClient) -> None:
-    provider = FakeProvider()
+    """トークン量を抑えるため、LLM に渡すのは直近20件まで。"""
+    provider = FakeProvider([reply(f"返答{i}") for i in range(20)])
     use_provider(provider)
 
-    history = [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": f"発言{i}"}
-        for i in range(30)
-    ]
-    client.post("/chat", json={"message": "最新", "history": history})
+    conversation_id = None
+    for i in range(15):
+        body = client.post(
+            "/chat", json={"message": f"発言{i}", "conversation_id": conversation_id}
+        ).json()
+        conversation_id = body["conversation_id"]
 
-    sent = provider.calls[0]
+    sent = provider.calls[-1]
     assert len(sent) == 21  # 直近20件 + 今回の発言
-    assert sent[0].content == "発言10"
+    assert sent[-1].content.endswith("発言14")
 
 
 def test_chat_rejects_empty_message(client: TestClient) -> None:
@@ -213,9 +242,13 @@ def test_confirm_executes_the_pending_action(client: TestClient) -> None:
     created = client.post("/tasks", json={"title": "消される予定"}).json()
     use_provider(FakeProvider())
 
+    conversation_id = client.post("/chat", json={"message": "準備"}).json()[
+        "conversation_id"
+    ]
     body = client.post(
         "/chat/confirm",
         json={
+            "conversation_id": conversation_id,
             "tool": "delete_task",
             "arguments": {"task_id": created["id"]},
             "description": "タスク「消される予定」を削除します。",
@@ -231,9 +264,13 @@ def test_confirm_revalidates_arguments(client: TestClient) -> None:
     """クライアントが返してきた引数もそのままは信用しない。"""
     use_provider(FakeProvider())
 
+    conversation_id = client.post("/chat", json={"message": "準備"}).json()[
+        "conversation_id"
+    ]
     body = client.post(
         "/chat/confirm",
         json={
+            "conversation_id": conversation_id,
             "tool": "delete_task",
             "arguments": {"task_id": 999999},
             "description": "タスクを削除します。",
