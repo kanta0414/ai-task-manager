@@ -1,9 +1,12 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Query, status
 
-from app.api.deps import CurrentUser, TaskServiceDep
+from app.api.deps import CurrentUser, ScheduleServiceDep, TaskServiceDep
 from app.models.enums import TaskPriority, TaskStatus
 from app.models.task import Task
 from app.schemas.common import AwareDatetime
+from app.schemas.schedule import ScheduledItemRead
 from app.schemas.task import (
     SortOrder,
     TaskCreate,
@@ -77,6 +80,21 @@ def complete_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> T
 def reopen_task(task_id: int, user: CurrentUser, service: TaskServiceDep) -> Task:
     """完了したタスクを未完了に戻す。"""
     return service.reopen(user, task_id)
+
+
+@router.post("/{task_id}/schedule", response_model=ScheduledItemRead)
+def reserve_time(
+    task_id: int, user: CurrentUser, service: ScheduleServiceDep
+) -> ScheduledItemRead:
+    """このタスクの作業時間を空き時間に確保し、予定として登録する。"""
+    item = service.reserve_time_for_task(user, task_id, now=datetime.now(UTC))
+    return ScheduledItemRead(
+        task_id=item.task_id,
+        title=item.title,
+        start_at=item.start_at,
+        end_at=item.end_at,
+        minutes=item.minutes,
+    )
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)

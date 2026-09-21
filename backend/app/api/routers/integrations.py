@@ -1,9 +1,15 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import RedirectResponse
 
 from app.api.deps import CurrentUser, DbSession, ExternalCalendarServiceDep
 from app.core.config import get_settings
-from app.schemas.integration import AuthorizeUrl, IntegrationStatus
+from app.schemas.common import AwareDatetime
+from app.schemas.integration import (
+    AuthorizeUrl,
+    BusyIntervalRead,
+    BusyIntervalsResponse,
+    IntegrationStatus,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -17,6 +23,27 @@ def status_(user: CurrentUser, service: ExternalCalendarServiceDep) -> Integrati
         google_connected=bool(accounts),
         google_account_email=accounts[0].account_email if accounts else None,
         google_needs_reauth=bool(accounts and accounts[0].reauth_required),
+    )
+
+
+@router.get("/busy", response_model=BusyIntervalsResponse)
+def busy(
+    user: CurrentUser,
+    service: ExternalCalendarServiceDep,
+    from_: AwareDatetime = Query(alias="from"),
+    to: AwareDatetime = Query(),
+) -> BusyIntervalsResponse:
+    """外部カレンダーで埋まっている時間帯を返す。
+
+    カレンダー画面に「予定あり」として重ねて表示するために使う。
+    連携していなければ空。
+    """
+    intervals = service.busy_intervals(user, from_, to)
+    return BusyIntervalsResponse(
+        count=len(intervals),
+        intervals=[
+            BusyIntervalRead(start_at=i.start_at, end_at=i.end_at) for i in intervals
+        ],
     )
 
 

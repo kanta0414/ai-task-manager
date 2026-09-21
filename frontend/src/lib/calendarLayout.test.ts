@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { layoutDay } from "@/lib/calendarLayout";
+import { layoutBusy, layoutDay } from "@/lib/calendarLayout";
 import type { CalendarEvent } from "@/types/event";
 
 let nextId = 1;
@@ -133,5 +133,61 @@ describe("layoutDay", () => {
       "先",
       "後",
     ]);
+  });
+});
+
+describe("layoutBusy", () => {
+  it("外部の埋まり時間をその日の位置に変換する", () => {
+    const spans = layoutBusy(
+      [
+        {
+          start_at: "2026-09-22T13:00:00+09:00",
+          end_at: "2026-09-22T15:00:00+09:00",
+        },
+      ],
+      "2026-09-22",
+    );
+
+    expect(spans).toEqual([{ startMinutes: 13 * 60, endMinutes: 15 * 60 }]);
+  });
+
+  it("日をまたぐ埋まり時間を切り詰める", () => {
+    const interval = {
+      start_at: "2026-09-22T23:00:00+09:00",
+      end_at: "2026-09-23T01:00:00+09:00",
+    };
+
+    expect(layoutBusy([interval], "2026-09-22")).toEqual([
+      { startMinutes: 23 * 60, endMinutes: 24 * 60 },
+    ]);
+    expect(layoutBusy([interval], "2026-09-23")).toEqual([
+      { startMinutes: 0, endMinutes: 60 },
+    ]);
+  });
+
+  it("その日にかからない期間は除く", () => {
+    expect(
+      layoutBusy(
+        [
+          {
+            start_at: "2026-09-25T10:00:00+09:00",
+            end_at: "2026-09-25T11:00:00+09:00",
+          },
+        ],
+        "2026-09-22",
+      ),
+    ).toEqual([]);
+  });
+
+  it("開始の早い順に並べる", () => {
+    const spans = layoutBusy(
+      [
+        { start_at: "2026-09-22T15:00:00+09:00", end_at: "2026-09-22T16:00:00+09:00" },
+        { start_at: "2026-09-22T09:00:00+09:00", end_at: "2026-09-22T10:00:00+09:00" },
+      ],
+      "2026-09-22",
+    );
+
+    expect(spans.map((s) => s.startMinutes)).toEqual([9 * 60, 15 * 60]);
   });
 });

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -14,3 +16,15 @@ class IntegrationStatus(BaseModel):
 
 class AuthorizeUrl(BaseModel):
     url: str
+
+
+class BusyIntervalRead(BaseModel):
+    """外部カレンダーで埋まっている時間帯。予定の内容は取得していない。"""
+
+    start_at: datetime
+    end_at: datetime
+
+
+class BusyIntervalsResponse(BaseModel):
+    count: int
+    intervals: list[BusyIntervalRead]

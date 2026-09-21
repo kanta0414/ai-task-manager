@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import { EventForm } from "@/components/calendar/EventForm";
-import { DAY_MINUTES, layoutDay, type PositionedEvent } from "@/lib/calendarLayout";
+import {
+  DAY_MINUTES,
+  layoutBusy,
+  layoutDay,
+  type PositionedEvent,
+} from "@/lib/calendarLayout";
 import {
   addDays,
   formatDayLabel,
@@ -38,6 +43,8 @@ type DragState = {
 export function WeekCalendar() {
   const {
     events,
+    externalBusy,
+    deadlines,
     weekStart,
     loading,
     error,
@@ -263,6 +270,22 @@ export function WeekCalendar() {
                   />
                 ))}
 
+                {/* 外部カレンダーの埋まり時間。操作対象ではないので背面に敷く */}
+                {layoutBusy(externalBusy, day).map((span, index) => (
+                  <div
+                    key={`busy-${index}`}
+                    title="Google カレンダーの予定（内容は取得していません）"
+                    style={{
+                      top: (span.startMinutes / 60) * HOUR_HEIGHT,
+                      height:
+                        ((span.endMinutes - span.startMinutes) / 60) * HOUR_HEIGHT,
+                    }}
+                    className="pointer-events-none absolute inset-x-0 z-0 overflow-hidden border-l-2 border-zinc-400 bg-zinc-400/20 px-1 text-[10px] leading-tight text-muted"
+                  >
+                    予定あり
+                  </div>
+                ))}
+
                 {layoutDay(events, day).map((positioned) => {
                   const dragging = preview?.eventId === positioned.event.id;
                   const width = 100 / positioned.columns;
@@ -301,6 +324,23 @@ export function WeekCalendar() {
                     </div>
                   );
                 })}
+
+                {/* タスクの期限。予定ではないので線だけで示す */}
+                {deadlines
+                  .map((task) => ({ task, slot: toJstSlot(task.due_date ?? "") }))
+                  .filter(({ task, slot }) => task.due_date && slot.dateKey === day)
+                  .map(({ task, slot }) => (
+                    <div
+                      key={`due-${task.id}`}
+                      title={`締切: ${task.title}`}
+                      style={{ top: (slot.minutes / 60) * HOUR_HEIGHT }}
+                      className="pointer-events-none absolute inset-x-0 z-20 border-t border-dashed border-rose-500"
+                    >
+                      <span className="ml-0.5 rounded bg-rose-500/15 px-1 text-[10px] text-rose-600 dark:text-rose-300">
+                        締切 {task.title}
+                      </span>
+                    </div>
+                  ))}
 
                 {now?.dateKey === day && (
                   <div

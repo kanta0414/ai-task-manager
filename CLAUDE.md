@@ -75,7 +75,9 @@ GET    /schedule/free-time（空き時間を探す）
 GET    /schedule/plan（未完了タスクを配置した案。登録はしない）
 GET    /schedule/reschedule-plan（やり残しの組み直し案。反映はしない）
 GET    /notifications        POST /notifications/{id}/read
-GET    /integrations         GET /integrations/google/authorize
+POST   /tasks/{id}/schedule（作業時間を空き時間に確保して予定を作る）
+GET    /integrations         GET /integrations/busy（外部の埋まり時間）
+GET    /integrations/google/authorize
 GET    /integrations/google/callback   DELETE /integrations/google
 ```
 
@@ -169,6 +171,8 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - データ取得・更新は `TasksProvider` / `EventsProvider` の中だけで行い、コンポーネントは
   `useTasks()` / `useEvents()` を使う。AI アシスタントが操作した結果も `refresh()` で反映する（Phase 5 以降）。
 - カレンダーの座標計算は `src/lib/calendarLayout.ts`（重なりの列割り当て・日またぎの切り詰め）。
+- カレンダーには3種類を重ねて描く: **予定**（操作可）／**外部カレンダーの埋まり時間**（灰色・背面）／
+  **タスクの期限**（赤い点線・操作不可）。タスクと予定は別データなので、見た目でも区別する。
 - 日時入力は `<input type="datetime-local">` の値（オフセット無し）をそのまま送り、
   Backend 側で Asia/Tokyo として解釈させる。フロントでタイムゾーン変換しない。
 

@@ -5,6 +5,49 @@ export const DAY_MINUTES = 24 * 60;
 /** 短い予定でもタイトルが読めるようにする最小の表示高さ（分換算）。 */
 const MIN_VISIBLE_MINUTES = 20;
 
+export type DaySpan = {
+  /** その日の0時からの分数 */
+  startMinutes: number;
+  endMinutes: number;
+};
+
+/**
+ * 期間をその日に見えている範囲へ切り詰める。
+ * その日にかからなければ null。
+ */
+export function clipToDay(
+  startIso: string,
+  endIso: string,
+  dayKey: DateKey,
+): DaySpan | null {
+  const start = toJstSlot(startIso);
+  const end = toJstSlot(endIso);
+
+  let startMinutes: number;
+  if (start.dateKey === dayKey) startMinutes = start.minutes;
+  else if (start.dateKey < dayKey) startMinutes = 0;
+  else return null;
+
+  let endMinutes: number;
+  if (end.dateKey === dayKey) endMinutes = end.minutes;
+  else if (end.dateKey > dayKey) endMinutes = DAY_MINUTES;
+  else return null;
+
+  if (endMinutes <= startMinutes) return null;
+  return { startMinutes, endMinutes };
+}
+
+/** 外部カレンダーで埋まっている時間帯を、その日の表示位置に変換する。 */
+export function layoutBusy(
+  intervals: { start_at: string; end_at: string }[],
+  dayKey: DateKey,
+): DaySpan[] {
+  return intervals
+    .map((interval) => clipToDay(interval.start_at, interval.end_at, dayKey))
+    .filter((span): span is DaySpan => span !== null)
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
 export type PositionedEvent = {
   event: CalendarEvent;
   /** その日の0時からの分数（日をまたぐ予定は日の端で切り詰める） */
@@ -26,27 +69,15 @@ export function layoutDay(
   const visible: PositionedEvent[] = [];
 
   for (const event of events) {
-    const start = toJstSlot(event.start_at);
-    const end = toJstSlot(event.end_at);
-
-    let startMinutes: number;
-    if (start.dateKey === dayKey) startMinutes = start.minutes;
-    else if (start.dateKey < dayKey) startMinutes = 0;
-    else continue;
-
-    let endMinutes: number;
-    if (end.dateKey === dayKey) endMinutes = end.minutes;
-    else if (end.dateKey > dayKey) endMinutes = DAY_MINUTES;
-    else continue;
-
-    if (endMinutes <= startMinutes) continue;
+    const span = clipToDay(event.start_at, event.end_at, dayKey);
+    if (span === null) continue;
 
     visible.push({
       event,
-      startMinutes,
+      startMinutes: span.startMinutes,
       endMinutes: Math.min(
         DAY_MINUTES,
-        Math.max(endMinutes, startMinutes + MIN_VISIBLE_MINUTES),
+        Math.max(span.endMinutes, span.startMinutes + MIN_VISIBLE_MINUTES),
       ),
       column: 0,
       columns: 1,

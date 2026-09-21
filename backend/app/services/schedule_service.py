@@ -7,7 +7,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.exceptions import BusinessRuleError
+from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.models.calendar_event import CalendarEvent
 from app.models.enums import TaskPriority, TaskStatus
 from app.models.task import Task
 from app.models.user import User
@@ -142,6 +143,7 @@ class ScheduleService:
     def __init__(
         self, db: Session, external: "ExternalCalendarService | None" = None
     ) -> None:
+        self.db = db
         self.events = EventRepository(db)
         self.tasks = TaskRepository(db)
         # 連携していれば外部カレンダーの埋まり時間も考慮する
@@ -339,6 +341,56 @@ class ScheduleService:
             skipped=skipped,
             rule=_describe_plan_rule(rules, max_minutes_per_day),
         )
+
+    def reserve_time_for_task(
+        self,
+        user: User,
+        task_id: int,
+        *,
+        now: datetime,
+        constraints: ScheduleConstraints | None = None,
+    ) -> ScheduledItem:
+        """1つのタスクに作業時間を確保し、予定として登録する。
+
+        画面の「作業時間を確保」ボタン用。AI を通さずに自動配置を試せる。
+        置けない場合は理由を添えて失敗させる（黙って何もしないと分かりにくい）。
+        """
+        task = self.tasks.get(task_id, user.id)
+        if task is None:
+            raise NotFoundError("タスク", task_id)
+        if not task.estimated_minutes:
+            raise BusinessRuleError(
+                "所要時間が設定されていません。先に所要時間を入力してください"
+            )
+
+        # 期限があればそこまで、無ければ2週間先までを探索範囲にする
+        period_end = task.due_date or now + timedelta(days=14)
+        if period_end <= now:
+            raise BusinessRuleError("期限を過ぎています。先に期限を見直してください")
+
+        plan = self.generate_schedule(
+            user,
+            period_start=round_up_to_quarter(now),
+            period_end=period_end,
+            task_ids=[task_id],
+            constraints=constraints,
+        )
+        if not plan.items:
+            reason = plan.skipped[0].reason if plan.skipped else "空き時間が見つかりません"
+            raise BusinessRuleError(reason)
+
+        item = plan.items[0]
+        self.events.add(
+            CalendarEvent(
+                user_id=user.id,
+                title=task.title,
+                start_at=item.start_at,
+                end_at=item.end_at,
+                task_id=task.id,
+            )
+        )
+        self.db.commit()
+        return item
 
     def _tasks_to_schedule(self, user: User, task_ids: list[int] | None) -> list[Task]:
         tasks = self.tasks.search(

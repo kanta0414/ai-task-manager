@@ -6,13 +6,40 @@ import { TaskFilters } from "@/components/tasks/TaskFilters";
 import { TaskForm } from "@/components/tasks/TaskForm";
 import { TaskItem } from "@/components/tasks/TaskItem";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { withSubtaskOrder } from "@/lib/tasks";
+import { ApiError } from "@/lib/api";
+import { reserveTimeForTask, withSubtaskOrder } from "@/lib/tasks";
+import { formatDateTime } from "@/lib/datetime";
+import { useEvents } from "@/store/EventsProvider";
 import { useTasks } from "@/store/TasksProvider";
 import type { Task } from "@/types/task";
 
 export function TaskBoard() {
   const { tasks, loading, error, addTask, editTask, removeTask, toggleTask } =
     useTasks();
+
+  const { refresh: refreshEvents } = useEvents();
+  const [reservingId, setReservingId] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const reserve = async (task: Task) => {
+    setReservingId(task.id);
+    setNotice(null);
+    try {
+      const item = await reserveTimeForTask(task.id);
+      setNotice(
+        `「${task.title}」の作業時間を ${formatDateTime(item.start_at)} から${item.minutes}分の予定を作りました。`,
+      );
+      refreshEvents();
+    } catch (caught) {
+      setNotice(
+        caught instanceof ApiError
+          ? readDetail(caught.message)
+          : "時間を確保できませんでした。",
+      );
+    } finally {
+      setReservingId(null);
+    }
+  };
 
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
@@ -36,6 +63,12 @@ export function TaskBoard() {
 
       <TaskFilters />
 
+      {notice && (
+        <p className="rounded-md border border-border bg-background px-3 py-2 text-xs text-muted">
+          {notice}
+        </p>
+      )}
+
       {error && (
         <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
           {error}
@@ -58,6 +91,8 @@ export function TaskBoard() {
               onToggle={() => void toggleTask(task)}
               onEdit={() => setEditing(task)}
               onDelete={() => setDeleting(task)}
+              onReserve={() => void reserve(task)}
+              reserving={reservingId === task.id}
             />
           ))}
         </ul>
@@ -88,4 +123,23 @@ export function TaskBoard() {
       )}
     </section>
   );
+}
+
+/** Backend が返した JSON から表示用の文言を取り出す。 */
+function readDetail(raw: string): string {
+  const body = raw.replace(/^API \d+: /, "");
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "detail" in parsed &&
+      typeof (parsed as { detail: unknown }).detail === "string"
+    ) {
+      return (parsed as { detail: string }).detail;
+    }
+  } catch {
+    // JSON でなければそのまま
+  }
+  return body;
 }

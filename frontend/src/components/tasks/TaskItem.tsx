@@ -9,6 +9,9 @@ type Props = {
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** 空き時間に作業時間を確保する */
+  onReserve: () => void;
+  reserving?: boolean;
 };
 
 const PRIORITY_CLASS: Record<Task["priority"], string> = {
@@ -31,7 +34,15 @@ const DUE_PREFIX: Record<string, string> = {
   upcoming: "",
 };
 
-export function TaskItem({ task, isSubtask = false, onToggle, onEdit, onDelete }: Props) {
+export function TaskItem({
+  task,
+  isSubtask = false,
+  onToggle,
+  onEdit,
+  onDelete,
+  onReserve,
+  reserving = false,
+}: Props) {
   const done = task.status === "done";
   const due = dueState(task.due_date);
   const duration = formatDuration(task.estimated_minutes);
@@ -76,6 +87,17 @@ export function TaskItem({ task, isSubtask = false, onToggle, onEdit, onDelete }
       </div>
 
       <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        {!done && (
+          <button
+            type="button"
+            onClick={onReserve}
+            disabled={reserving}
+            title="空き時間に作業時間を確保して予定を作ります"
+            className="rounded px-2 py-1 text-xs text-muted hover:bg-background disabled:opacity-50"
+          >
+            {reserving ? "確保中..." : "時間を確保"}
+          </button>
+        )}
         <button
           type="button"
           onClick={onEdit}

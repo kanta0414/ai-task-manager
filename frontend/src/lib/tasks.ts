@@ -74,3 +74,25 @@ export function withSubtaskOrder(tasks: Task[]): TaskRow[] {
     })),
   ]);
 }
+
+/** 指定期間に期限があるタスク（カレンダーに締切を表示するため）。 */
+export function fetchTasksDueBetween(
+  fromNaive: string,
+  toNaive: string,
+): Promise<Task[]> {
+  const params = new URLSearchParams({
+    due_from: fromNaive,
+    due_to: toNaive,
+    status: "todo",
+    limit: "100",
+  });
+  params.append("status", "in_progress");
+  return apiFetch<Task[]>(`/tasks?${params.toString()}`);
+}
+
+/** タスクの作業時間を空き時間に確保する。 */
+export function reserveTimeForTask(
+  id: number,
+): Promise<{ task_id: number; start_at: string; end_at: string; minutes: number }> {
+  return apiFetch(`/tasks/${id}/schedule`, { method: "POST" });
+}

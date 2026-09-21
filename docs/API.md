@@ -28,6 +28,7 @@
 | `PATCH` | `/tasks/{task_id}` | タスクを部分更新する。未指定の項目は変更しない。 |
 | `POST` | `/tasks/{task_id}/complete` | タスクを完了にする。 |
 | `POST` | `/tasks/{task_id}/reopen` | 完了したタスクを未完了に戻す。 |
+| `POST` | `/tasks/{task_id}/schedule` | このタスクの作業時間を空き時間に確保し、予定として登録する。 |
 
 ## カレンダー
 
@@ -75,6 +76,7 @@
 | メソッド | パス | 説明 |
 | --- | --- | --- |
 | `GET` | `/integrations` | 外部カレンダーの連携状況を返す。 |
+| `GET` | `/integrations/busy` | 外部カレンダーで埋まっている時間帯を返す。 |
 | `DELETE` | `/integrations/google` | 連携を解除する（保存したトークンを削除する）。 |
 | `GET` | `/integrations/google/authorize` | Google の同意画面URLを返す。画面はここへ遷移させる。 |
 | `GET` | `/integrations/google/callback` | Google からの戻り先。 |

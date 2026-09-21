@@ -10,7 +10,10 @@ import {
   type ReactNode,
 } from "react";
 
-import { startOfWeek, todayKey, type DateKey } from "@/lib/datetime";
+import { addDays, startOfWeek, toNaiveDateTime, todayKey, type DateKey } from "@/lib/datetime";
+import { fetchExternalBusy } from "@/lib/integrations";
+import { fetchTasksDueBetween } from "@/lib/tasks";
+import type { Task } from "@/types/task";
 import {
   createEvent,
   deleteEvent,
@@ -23,8 +26,14 @@ import type {
   EventUpdateInput,
 } from "@/types/event";
 
+export type BusySpan = { start_at: string; end_at: string };
+
 type EventsContextValue = {
   events: CalendarEvent[];
+  /** 外部カレンダーで埋まっている時間帯（内容は取得していない） */
+  externalBusy: BusySpan[];
+  /** この週に期限があるタスク（締切としてカレンダーに表示する） */
+  deadlines: Task[];
   weekStart: DateKey;
   loading: boolean;
   error: string | null;
@@ -44,6 +53,8 @@ const EventsContext = createContext<EventsContextValue | null>(null);
  */
 export function EventsProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [externalBusy, setExternalBusy] = useState<BusySpan[]>([]);
+  const [deadlines, setDeadlines] = useState<Task[]>([]);
   const [weekStart, setWeekStart] = useState<DateKey>(() => startOfWeek(todayKey()));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +63,9 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+
+    const from = toNaiveDateTime(weekStart, 0);
+    const to = toNaiveDateTime(addDays(weekStart, 7), 0);
 
     fetchWeekEvents(weekStart)
       .then((result) => {
@@ -65,6 +79,23 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       })
       .finally(() => {
         if (active) setLoading(false);
+      });
+
+    // 外部カレンダーと締切は補助情報なので、取れなくても本体は表示する
+    fetchExternalBusy(from, to)
+      .then((result) => {
+        if (active) setExternalBusy(result.intervals);
+      })
+      .catch(() => {
+        if (active) setExternalBusy([]);
+      });
+
+    fetchTasksDueBetween(from, to)
+      .then((result) => {
+        if (active) setDeadlines(result);
+      })
+      .catch(() => {
+        if (active) setDeadlines([]);
       });
 
     // 週を素早く切り替えたとき、古い応答で上書きしない
@@ -93,6 +124,8 @@ export function EventsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<EventsContextValue>(
     () => ({
       events,
+      externalBusy,
+      deadlines,
       weekStart,
       loading,
       error,
@@ -116,7 +149,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
       removeEvent: (id) =>
         run(() => deleteEvent(id), "予定を削除できませんでした。"),
     }),
-    [events, weekStart, loading, error, reload, run],
+    [events, externalBusy, deadlines, weekStart, loading, error, reload, run],
   );
 
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>;
