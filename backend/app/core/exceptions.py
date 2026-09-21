@@ -30,3 +30,11 @@ class LLMError(AppError):
 
 class LLMUnavailableError(LLMError):
     """LLM に接続できない（未起動・APIキー未設定・ネットワーク断など）。"""
+
+
+class UnauthorizedError(AppError):
+    """ログインしていない、またはセッションが無効。"""
+
+
+class ConflictError(AppError):
+    """既に存在するものを作ろうとした（メールアドレスの重複など）。"""

@@ -4,7 +4,18 @@
 対話的な確認は http://localhost:8000/docs から行える。
 
 通常UIもLLM Toolも、この API の裏にある同じ Service Layer を経由する。
-認証は未実装（Phase 16）で、現在は既定ユーザーとして扱われる。
+
+**認証**: `/auth/*` と `/health` 以外はログインが必要（未ログインは 401）。
+セッションは httpOnly / SameSite=Lax の Cookie で保持する。
+
+## 認証
+
+| メソッド | パス | 説明 |
+| --- | --- | --- |
+| `POST` | `/auth/login` | メールアドレスとパスワードでログインする。 |
+| `POST` | `/auth/logout` | セッションを破棄する。 |
+| `GET` | `/auth/me` | ログイン中のユーザーを返す。 |
+| `POST` | `/auth/register` | ユーザーを登録し、そのままログイン状態にする。 |
 
 ## タスク
 

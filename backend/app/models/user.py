@@ -22,6 +22,8 @@ class User(TimestampMixin, Base):
     timezone: Mapped[str] = mapped_column(
         String(50), nullable=False, default="Asia/Tokyo", server_default="Asia/Tokyo"
     )
+    # bcrypt のハッシュ。認証導入前に作られたユーザーは未設定のことがある
+    password_hash: Mapped[str | None] = mapped_column(String(255))
 
     tasks: Mapped[list["Task"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

@@ -57,7 +57,16 @@ sequenceDiagram
 削除・タスク分解・自動配置・再配置は**即時実行しない**。
 承認を実行する専用ツールは LLM に提示すらしない（`exposed=False`）。
 
-### 3. LLM を差し替えられる
+### 3. 認証とデータ分離
+
+セッションは **httpOnly / SameSite=Lax の Cookie** で保持する。
+JWT を localStorage に置く方式と比べ、XSS でトークンを持ち出されない。
+SameSite=Lax により、他サイトからのリクエストには Cookie が付かないため CSRF 対策にもなる。
+
+「現在のユーザー」を決めるのは `get_current_user` の1箇所だけで、
+全てのデータ操作がここを通る。Repository の問い合わせにも必ず `user_id` 条件が入る。
+
+### 4. LLM を差し替えられる
 
 ```
 LLMProvider（抽象）
@@ -218,6 +227,12 @@ npm run dev
 - アプリ: http://localhost:3000
 - API ドキュメント: http://localhost:8000/docs
 
+初回は画面から**アカウントを登録**する。`/auth/*` と `/health` 以外はログインが必要。
+
+> **注意**: フロントの `NEXT_PUBLIC_API_BASE_URL` には、画面と同じホスト名を使うこと。
+> `localhost` と `127.0.0.1` は SameSite 判定で別サイト扱いになり、
+> セッション Cookie が送られなくなる。
+
 Docker で DB を動かす場合は `docker compose up -d db`（ホスト側ポート 5433）。
 
 ### AI アシスタント（任意）
@@ -322,7 +337,6 @@ Backend のテストは、CRUD だけでなく以下を含む。
 
 ## 今後の課題
 
-- **認証**（Phase 16）: 現在は固定の既定ユーザー。`get_current_user` 1箇所の差し替えで移行できる構造
 - **レート制限**: `/chat` は LLM を呼ぶため、公開時に必要
 - **Google Calendar 連携**（Phase 17）
 - フロントエンドのテストはロジック層のみ（コンポーネントのテストは未整備）

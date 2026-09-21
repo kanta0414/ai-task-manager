@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routers import (
+    auth,
     chat,
     conversations,
     events,
@@ -16,9 +17,11 @@ from app.api.routers import (
 from app.core.config import get_settings
 from app.core.exceptions import (
     BusinessRuleError,
+    ConflictError,
     LLMError,
     LLMUnavailableError,
     NotFoundError,
+    UnauthorizedError,
 )
 
 settings = get_settings()
@@ -40,9 +43,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    # Cookie を使っていないので資格情報は許可しない。
-    # 認証（Phase 16）で Cookie を使うようになったら True にする
-    allow_credentials=False,
+    # セッション Cookie を送受信するため許可する。
+    # allow_origins は列挙した値のみ（ワイルドカード不可）
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
@@ -68,6 +71,7 @@ async def limit_request_size(request: Request, call_next):  # noqa: ANN001, ANN2
     return await call_next(request)
 
 
+app.include_router(auth.router)
 app.include_router(health.router)
 app.include_router(tasks.router)
 app.include_router(events.router)
@@ -79,6 +83,16 @@ app.include_router(notifications.router)
 
 # Service Layer のドメイン例外を HTTP へ変換する。
 # Service 自体は HTTP を知らないため、LLM Tool からも同じ例外を扱える。
+@app.exception_handler(UnauthorizedError)
+def handle_unauthorized(request: Request, exc: UnauthorizedError) -> JSONResponse:
+    return JSONResponse(status_code=401, content={"detail": exc.message})
+
+
+@app.exception_handler(ConflictError)
+def handle_conflict(request: Request, exc: ConflictError) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": exc.message})
+
+
 @app.exception_handler(NotFoundError)
 def handle_not_found(request: Request, exc: NotFoundError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": exc.message})

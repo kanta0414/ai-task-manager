@@ -32,9 +32,12 @@ class Settings(BaseSettings):
     schedule_day_start_hour: int = 9
     schedule_day_end_hour: int = 22
 
-    # 認証導入前の既定ユーザー（Phase 16 で置き換える）
-    default_user_email: str = "owner@example.com"
-    default_user_name: str = "Owner"
+    # 認証
+    secret_key: str = ""
+    access_token_expire_minutes: int = 60 * 24 * 7
+    session_cookie_name: str = "session"
+    # HTTPS でのみ Cookie を送る。本番では True にする
+    session_cookie_secure: bool = False
 
     # LLM。既定はローカルの Ollama（API料金が発生しない）
     llm_provider: str = "ollama"

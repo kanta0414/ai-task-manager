@@ -13,6 +13,11 @@ alembic==1.16.5
 pytest==8.4.2
 httpx==0.28.1
 
+# --- 認証 ---
+PyJWT==2.10.1
+bcrypt==4.3.0
+email-validator==2.3.0
+
 # --- 非同期処理 ---
 celery==5.5.3
 redis==6.4.0

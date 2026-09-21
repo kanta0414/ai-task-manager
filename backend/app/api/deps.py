@@ -1,11 +1,15 @@
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Cookie, Depends
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+from app.core.exceptions import UnauthorizedError
+from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.llm.factory import get_llm_provider
 from app.models.user import User
+from app.services.auth_service import AuthService
 from app.services.chat_service import ChatService
 from app.services.conversation_service import ConversationService
 from app.services.tool_registry import ToolRegistry
@@ -13,17 +17,31 @@ from app.services.event_service import EventService
 from app.services.notification_service import NotificationService
 from app.services.schedule_service import ScheduleService
 from app.services.task_service import TaskService
-from app.services.user_service import get_or_create_default_user
 
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def get_current_user(db: DbSession) -> User:
+def get_current_user(
+    db: DbSession,
+    session: Annotated[str | None, Cookie(alias=get_settings().session_cookie_name)] = None,
+) -> User:
     """現在のユーザーを返す唯一の入口。
 
-    Phase 16 で認証を入れる際は、この関数だけを JWT 等の実装に差し替える。
+    セッション Cookie の JWT からユーザーを特定する。
+    全てのデータ操作がここを通るため、ここが返すユーザー以外のデータには触れない。
     """
-    return get_or_create_default_user(db)
+    if session is None:
+        raise UnauthorizedError("ログインしてください")
+
+    user_id = decode_access_token(session)
+    if user_id is None:
+        raise UnauthorizedError("セッションの有効期限が切れています")
+
+    user = db.get(User, user_id)
+    if user is None:
+        # ユーザーが削除された後もトークンは残りうる
+        raise UnauthorizedError("ログインしてください")
+    return user
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -79,3 +97,10 @@ def get_notification_service(db: DbSession) -> NotificationService:
 NotificationServiceDep = Annotated[
     NotificationService, Depends(get_notification_service)
 ]
+
+
+def get_auth_service(db: DbSession) -> AuthService:
+    return AuthService(db)
+
+
+AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]

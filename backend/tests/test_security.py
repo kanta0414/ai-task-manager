@@ -72,8 +72,12 @@ def test_oversized_request_is_rejected(client: TestClient) -> None:
     assert res.status_code == 413
 
 
-def test_cors_does_not_allow_credentials(client: TestClient) -> None:
-    """Cookie を使っていないので資格情報は許可しない。"""
+def test_cors_allows_credentials_only_for_listed_origins(client: TestClient) -> None:
+    """セッション Cookie を送るため資格情報を許可するが、許可先は列挙したオリジンのみ。
+
+    ワイルドカード（*）と資格情報の併用は、任意のサイトから
+    ログイン中のセッションを使われることになるため決してしない。
+    """
     res = client.options(
         "/tasks",
         headers={
@@ -81,8 +85,10 @@ def test_cors_does_not_allow_credentials(client: TestClient) -> None:
             "Access-Control-Request-Method": "POST",
         },
     )
-    assert res.headers.get("access-control-allow-origin") == "http://localhost:3000"
-    assert "access-control-allow-credentials" not in res.headers
+    origin = res.headers.get("access-control-allow-origin")
+    assert origin == "http://localhost:3000"
+    assert origin != "*"
+    assert res.headers.get("access-control-allow-credentials") == "true"
 
 
 def test_cors_rejects_unknown_origin(client: TestClient) -> None:

@@ -160,7 +160,8 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - 日時入力は `<input type="datetime-local">` の値（オフセット無し）をそのまま送り、
   Backend 側で Asia/Tokyo として解釈させる。フロントでタイムゾーン変換しない。
 
-- 「現在のユーザー」は `app/api/deps.py` の `get_current_user` のみが決める（Phase 16 で認証へ差し替え）。
+- 「現在のユーザー」は `app/api/deps.py` の `get_current_user` のみが決める。
+  セッション Cookie の JWT からユーザーを特定する。未ログインは 401。
 - Service はドメイン例外（`NotFoundError` / `BusinessRuleError`）を投げ、`main.py` の
   exception handler が HTTP へ変換する。**Service で HTTPException を使わない**。
 - 日時は `app/schemas/common.py` の `AwareDatetime` を使う（naive は Asia/Tokyo として解釈）。
@@ -184,6 +185,8 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - **ToolRegistry から直接DBを触らない。** テストで検証している。
 - 文字列入力には必ず長さ上限を付ける（`description` は `MAX_DESCRIPTION`）。
 - リクエスト本文は 1MB まで（`MAX_REQUEST_BYTES`）。
+- **フロントの API ベースURLは画面と同じホスト名にする。** `localhost` と `127.0.0.1` は
+  SameSite 判定で別サイト扱いになり、セッション Cookie が送られなくなる。
 
 ## 進捗
 
@@ -202,6 +205,7 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 14 未完了タスクの再配置（reschedule_unfinished）
 - [x] Phase 15 Celery / Redis（リマインダー・朝のまとめ・やり残し確認）
 - [x] Phase 19 セキュリティ監査（docs/セキュリティ.md に記録）
+- [x] Phase 16 認証（Cookieセッション / ユーザーごとのデータ分離）
 - [x] Phase 20 ポートフォリオ化（README / 構成図 / ER図 / API仕様）
 
 ## ドキュメントの更新
