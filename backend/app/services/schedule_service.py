@@ -88,6 +88,29 @@ class SchedulePlan:
     rule: str
 
 
+@dataclass(frozen=True)
+class RescheduledItem:
+    """終わらなかった作業時間を、先の空き時間へ移す案。"""
+
+    task_id: int
+    title: str
+    previous_event_id: int
+    previous_start_at: datetime
+    start_at: datetime
+    end_at: datetime
+
+    @property
+    def minutes(self) -> int:
+        return int((self.end_at - self.start_at).total_seconds() // 60)
+
+
+@dataclass(frozen=True)
+class ReschedulePlan:
+    items: list[RescheduledItem]
+    skipped: list[SkippedTask]
+    rule: str
+
+
 def sort_key_for_scheduling(task: Task) -> tuple:
     """配置する順番。
 
@@ -209,7 +232,9 @@ class ScheduleService:
                 )
                 continue
 
-            item, reason = self._place(task, free, used_per_day, tz, max_minutes_per_day)
+            item, reason = self._place_task(
+                task, free, used_per_day, tz, max_minutes_per_day
+            )
             if item is None:
                 skipped.append(SkippedTask(task.id, task.title, reason))
             else:
@@ -217,6 +242,85 @@ class ScheduleService:
 
         items.sort(key=lambda item: item.start_at)
         return SchedulePlan(
+            items=items,
+            skipped=skipped,
+            rule=_describe_plan_rule(rules, max_minutes_per_day),
+        )
+
+    def reschedule_unfinished(
+        self,
+        user: User,
+        *,
+        now: datetime,
+        period_end: datetime,
+        period_start: datetime | None = None,
+        constraints: ScheduleConstraints | None = None,
+        max_minutes_per_day: int = DEFAULT_MAX_MINUTES_PER_DAY,
+    ) -> ReschedulePlan:
+        """終わらなかった作業時間を、これからの空き時間へ組み直す案を作る。
+
+        対象は「終了時刻を過ぎたのに、紐づくタスクが未完了のままの予定」。
+        **ここでは何も変更しない。** 承認後に予定を差し替える。
+        """
+        rules = constraints or default_constraints()
+        tz = ZoneInfo(user.timezone or get_settings().timezone)
+        # 過去へは置き直せないので開始は現在以降。
+        # 「17:09:48から」のような提案にならないよう15分単位へ切り上げる
+        # 返す日時は利用者のタイムゾーンで表す。UTC のまま返すと
+        # LLM が「8:15」のように時差込みの数字をそのまま報告してしまう
+        start_from = round_up_to_quarter(max(period_start or now, now)).astimezone(tz)
+
+        stale = self.events.past_events_of_unfinished_tasks(user.id, now)
+        if not stale:
+            return ReschedulePlan(
+                items=[], skipped=[], rule=_describe_plan_rule(rules, max_minutes_per_day)
+            )
+
+        free: list[list[datetime]] = [
+            [slot.start_at, slot.end_at]
+            for slot in self.find_free_time(
+                user,
+                period_start=start_from,
+                period_end=period_end,
+                minutes_needed=1,
+                constraints=rules,
+            )
+        ]
+
+        used_per_day: dict[date, int] = defaultdict(int)
+        items: list[RescheduledItem] = []
+        skipped: list[SkippedTask] = []
+
+        for event in stale:
+            task = event.task
+            assert task is not None  # 問い合わせで紐付きのみ取得している
+            minutes = int((event.end_at - event.start_at).total_seconds() // 60)
+
+            slot, reason = _find_slot(
+                minutes=minutes,
+                due_date=task.due_date,
+                free=free,
+                used_per_day=used_per_day,
+                tz=tz,
+                max_minutes_per_day=max_minutes_per_day,
+            )
+            if slot is None:
+                skipped.append(SkippedTask(task.id, task.title, reason))
+                continue
+
+            items.append(
+                RescheduledItem(
+                    task_id=task.id,
+                    title=task.title,
+                    previous_event_id=event.id,
+                    previous_start_at=event.start_at,
+                    start_at=slot[0],
+                    end_at=slot[1],
+                )
+            )
+
+        items.sort(key=lambda item: item.start_at)
+        return ReschedulePlan(
             items=items,
             skipped=skipped,
             rule=_describe_plan_rule(rules, max_minutes_per_day),
@@ -234,7 +338,7 @@ class ScheduleService:
             tasks = [task for task in tasks if task.id in wanted]
         return sorted(tasks, key=sort_key_for_scheduling)
 
-    def _place(
+    def _place_task(
         self,
         task: Task,
         free: list[list[datetime]],
@@ -242,39 +346,22 @@ class ScheduleService:
         tz: ZoneInfo,
         max_minutes_per_day: int,
     ) -> tuple[ScheduledItem | None, str]:
-        """空き時間の早い順に、最初に収まる場所へ置く。"""
-        duration = timedelta(minutes=task.estimated_minutes or 0)
-        blocked_by_daily_cap = False
-
-        for index, (start, end) in enumerate(free):
-            day = start.astimezone(tz).date()
-
-            if used_per_day[day] + (task.estimated_minutes or 0) > max_minutes_per_day:
-                blocked_by_daily_cap = True
-                continue
-            if end - start < duration:
-                continue
-
-            finish = start + duration
-            if task.due_date is not None and finish > task.due_date:
-                # 空きは時刻順なので、これ以降はさらに遅くなる
-                return None, "期限までに空き時間が足りません"
-
-            free[index] = [finish, end]
-            if free[index][0] >= free[index][1]:
-                free.pop(index)
-            used_per_day[day] += task.estimated_minutes or 0
-
-            return (
-                ScheduledItem(
-                    task_id=task.id, title=task.title, start_at=start, end_at=finish
-                ),
-                "",
-            )
-
-        if blocked_by_daily_cap:
-            return None, "1日の作業上限に達したため置けませんでした"
-        return None, "十分な長さの空き時間がありません"
+        slot, reason = _find_slot(
+            minutes=task.estimated_minutes or 0,
+            due_date=task.due_date,
+            free=free,
+            used_per_day=used_per_day,
+            tz=tz,
+            max_minutes_per_day=max_minutes_per_day,
+        )
+        if slot is None:
+            return None, reason
+        return (
+            ScheduledItem(
+                task_id=task.id, title=task.title, start_at=slot[0], end_at=slot[1]
+            ),
+            "",
+        )
 
 
 
@@ -328,3 +415,55 @@ def _gaps(
     if cursor < window_end:
         gaps.append((cursor, window_end))
     return gaps
+
+
+def _find_slot(
+    *,
+    minutes: int,
+    due_date: datetime | None,
+    free: list[list[datetime]],
+    used_per_day: dict[date, int],
+    tz: ZoneInfo,
+    max_minutes_per_day: int,
+) -> tuple[tuple[datetime, datetime] | None, str]:
+    """空き時間の早い順に、最初に収まる場所を確保する。
+
+    見つかった分は free から取り除く（同じ時間に二重に置かないため）。
+    自動配置と再配置の両方から使う。
+    """
+    duration = timedelta(minutes=minutes)
+    blocked_by_daily_cap = False
+
+    for index, (start, end) in enumerate(free):
+        day = start.astimezone(tz).date()
+
+        if used_per_day[day] + minutes > max_minutes_per_day:
+            blocked_by_daily_cap = True
+            continue
+        if end - start < duration:
+            continue
+
+        finish = start + duration
+        if due_date is not None and finish > due_date:
+            # 空きは時刻順なので、これ以降はさらに遅くなる
+            return None, "期限までに空き時間が足りません"
+
+        free[index] = [finish, end]
+        if free[index][0] >= free[index][1]:
+            free.pop(index)
+        used_per_day[day] += minutes
+
+        return (start, finish), ""
+
+    if blocked_by_daily_cap:
+        return None, "1日の作業上限に達したため置けませんでした"
+    return None, "十分な長さの空き時間がありません"
+
+
+def round_up_to_quarter(moment: datetime) -> datetime:
+    """15分単位へ切り上げる（提案する開始時刻を読みやすくするため）。"""
+    if moment.minute % 15 == 0 and moment.second == 0 and moment.microsecond == 0:
+        return moment
+    return (moment + timedelta(minutes=15 - moment.minute % 15)).replace(
+        second=0, microsecond=0
+    )

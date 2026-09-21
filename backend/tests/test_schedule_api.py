@@ -83,3 +83,37 @@ def test_plan_endpoint_reports_skipped_tasks(client: TestClient) -> None:
 
     assert body["items"] == []
     assert body["skipped"][0]["reason"] == "所要時間が未設定です"
+
+
+def test_reschedule_plan_endpoint(client: TestClient) -> None:
+    """終わらなかった作業を組み直す案を、変更せずに返す。"""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    jst = ZoneInfo("Asia/Tokyo")
+    yesterday = datetime.now(jst) - timedelta(days=1)
+    task = client.post(
+        "/tasks", json={"title": "ES作成", "estimated_minutes": 120}
+    ).json()
+    event = client.post(
+        "/events",
+        json={
+            "title": "ES作成",
+            "start_at": f"{yesterday:%Y-%m-%d}T10:00:00+09:00",
+            "end_at": f"{yesterday:%Y-%m-%d}T12:00:00+09:00",
+            "task_id": task["id"],
+        },
+    ).json()
+
+    period_end = datetime.now(jst) + timedelta(days=7)
+    body = client.get(
+        "/schedule/reschedule-plan",
+        params={"period_end": f"{period_end:%Y-%m-%dT%H:%M:%S}+09:00"},
+    ).json()
+
+    assert len(body["items"]) == 1
+    assert body["items"][0]["title"] == "ES作成"
+    assert body["items"][0]["previous_event_id"] == event["id"]
+    assert body["items"][0]["minutes"] == 120
+    # 案を見ただけでは予定は変わらない
+    assert len(client.get("/events").json()) == 1

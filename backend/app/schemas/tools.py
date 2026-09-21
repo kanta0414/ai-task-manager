@@ -172,3 +172,27 @@ class CreateSubtasksArgs(BaseModel):
         max_length=15,
         description="分解した小タスク。作業の順番に並べる",
     )
+
+
+class RescheduleArgs(BaseModel):
+    period_end: AwareDatetime = Field(
+        description=f"いつまでに組み直すかの終了日時。{DATETIME_HINT}"
+    )
+    period_start: AwareDatetime | None = Field(
+        default=None,
+        description="組み直しを始める日時。「明日以降」なら明日の00:00。省略すると今から",
+    )
+    exclude_weekends: bool = Field(default=False, description="土日を除くかどうか")
+
+
+class RescheduleItemArg(BaseModel):
+    task_id: int = Field(gt=0)
+    previous_event_id: int = Field(gt=0)
+    start_at: AwareDatetime
+    end_at: AwareDatetime
+
+
+class ApplyRescheduleArgs(BaseModel):
+    """承認後に予定を差し替えるための引数（LLM には提示しない）。"""
+
+    items: list[RescheduleItemArg] = Field(min_length=1, max_length=50)

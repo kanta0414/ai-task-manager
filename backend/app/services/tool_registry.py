@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -14,11 +15,13 @@ from app.models.user import User
 from app.schemas.event import EventCreate, EventSearchParams, EventUpdate
 from app.schemas.task import TaskCreate, TaskSearchParams, TaskUpdate
 from app.schemas.tools import (
+    ApplyRescheduleArgs,
     ApplyScheduleArgs,
     CompleteTaskArgs,
     CreateSubtasksArgs,
     FindFreeTimeArgs,
     GenerateScheduleArgs,
+    RescheduleArgs,
     CreateEventArgs,
     CreateTaskArgs,
     DeleteEventArgs,
@@ -32,6 +35,7 @@ from app.schemas.tools import (
 )
 from app.services.event_service import EventService
 from app.services.schedule_service import (
+    ReschedulePlan,
     SchedulePlan,
     ScheduleConstraints,
     ScheduleService,
@@ -234,6 +238,25 @@ class ToolRegistry:
                 handler=self._unreachable,
                 needs_confirmation=True,
             ),
+            "reschedule_unfinished": ToolDefinition(
+                description=(
+                    "終わらなかった作業を、これからの空き時間へ組み直す。"
+                    "「今日終わらなかったタスクを明日以降に回して」"
+                    "「やり残しを再配置して」といった依頼に使う。"
+                    "対象は、時間が過ぎたのに完了していないタスクの予定。"
+                    "変更前にユーザーの承認が必要。"
+                ),
+                args_model=RescheduleArgs,
+                handler=self._unreachable,
+                needs_confirmation=True,
+            ),
+            "apply_reschedule": ToolDefinition(
+                description="承認された組み直しを反映する。",
+                args_model=ApplyRescheduleArgs,
+                handler=self._apply_reschedule,
+                needs_confirmation=True,
+                exposed=False,
+            ),
             "apply_schedule": ToolDefinition(
                 description="承認されたスケジュールを予定として登録する。",
                 args_model=ApplyScheduleArgs,
@@ -317,6 +340,9 @@ class ToolRegistry:
         elif name == "create_subtasks":
             assert isinstance(args, CreateSubtasksArgs)
             return self._propose_subtasks(args)
+        elif name == "reschedule_unfinished":
+            assert isinstance(args, RescheduleArgs)
+            return self._propose_reschedule(args)
         elif name == "generate_schedule":
             assert isinstance(args, GenerateScheduleArgs)
             return self._propose_schedule(args)
@@ -611,6 +637,98 @@ class ToolRegistry:
         )
 
 
+    # --------------------------------------------------------- 未完了の再配置
+
+    def _propose_reschedule(self, args: RescheduleArgs) -> ToolOutcome:
+        """終わらなかった作業の組み直し案を作り、承認を求める。"""
+        defaults = default_constraints()
+        plan = self.schedule.reschedule_unfinished(
+            self.user,
+            now=datetime.now(UTC),
+            period_start=args.period_start,
+            period_end=args.period_end,
+            constraints=ScheduleConstraints(
+                day_start_hour=defaults.day_start_hour,
+                day_end_hour=defaults.day_end_hour,
+                exclude_weekends=args.exclude_weekends,
+            ),
+        )
+
+        if not plan.items:
+            return ToolOutcome(
+                {
+                    "rescheduled": 0,
+                    "message": (
+                        "組み直す対象がありません。"
+                        "時間が過ぎた予定はすべて完了扱いになっています。"
+                        if not plan.skipped
+                        else "対象はありますが、空き時間に収まりませんでした。"
+                    ),
+                    "skipped": [
+                        {"title": s.title, "reason": s.reason} for s in plan.skipped
+                    ],
+                }
+            )
+
+        return ToolOutcome(
+            {
+                "status": "confirmation_required",
+                "message": "ユーザーの承認待ちです。承認されるまで変更されません。",
+                "planned": [
+                    {
+                        "title": item.title,
+                        "from": item.previous_start_at.isoformat(),
+                        "to": item.start_at.isoformat(),
+                    }
+                    for item in plan.items
+                ],
+            },
+            pending=PendingAction(
+                tool="apply_reschedule",
+                arguments={
+                    "items": [
+                        {
+                            "task_id": item.task_id,
+                            "previous_event_id": item.previous_event_id,
+                            "start_at": item.start_at.isoformat(),
+                            "end_at": item.end_at.isoformat(),
+                        }
+                        for item in plan.items
+                    ]
+                },
+                description=format_reschedule(plan),
+                done_message=f"{len(plan.items)}件の予定を組み直しました。",
+            ),
+        )
+
+    def _apply_reschedule(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, ApplyRescheduleArgs)
+        moved = []
+        for item in args.items:
+            task = self.tasks.get(self.user, item.task_id)
+            # 所有者確認を兼ねて取得してから消す
+            self.events.get(self.user, item.previous_event_id)
+            self.events.delete(self.user, item.previous_event_id)
+
+            event = self.events.create(
+                self.user,
+                EventCreate(
+                    title=task.title,
+                    start_at=item.start_at,
+                    end_at=item.end_at,
+                    task_id=task.id,
+                ),
+            )
+            moved.append({"event_id": event.id, "title": event.title})
+
+        return ToolOutcome(
+            {"moved": len(moved), "events": moved},
+            mutated=True,
+            message=f"{len(moved)}件の予定を組み直しました。",
+        )
+
+
+
 WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
 
 
@@ -631,6 +749,29 @@ def format_plan(plan: SchedulePlan) -> str:
     if plan.skipped:
         lines.append("")
         lines.append("配置できなかったタスク:")
+        lines.extend(f"  {s.title}（{s.reason}）" for s in plan.skipped)
+
+    lines.append("")
+    lines.append(f"条件: {plan.rule}")
+    return "\n".join(lines)
+
+
+def format_reschedule(plan: ReschedulePlan) -> str:
+    """組み直しの確認文面。どこからどこへ動かすかを示す。"""
+    lines = ["以下の予定を組み直します。", ""]
+    for item in plan.items:
+        before = item.previous_start_at
+        after = item.start_at
+        lines.append(
+            f"  {item.title}: "
+            f"{before.month}/{before.day} {before:%H:%M} → "
+            f"{after.month}/{after.day}({WEEKDAYS_JA[after.weekday()]}) "
+            f"{after:%H:%M}〜{item.end_at:%H:%M}"
+        )
+
+    if plan.skipped:
+        lines.append("")
+        lines.append("組み直せなかったもの:")
         lines.extend(f"  {s.title}（{s.reason}）" for s in plan.skipped)
 
     lines.append("")

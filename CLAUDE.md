@@ -66,6 +66,7 @@ POST   /chat（conversation_id 省略で新規会話）   POST /chat/confirm   G
 GET    /conversations      GET /conversations/{id}    DELETE /conversations/{id}
 GET    /schedule/free-time（空き時間を探す）
 GET    /schedule/plan（未完了タスクを配置した案。登録はしない）
+GET    /schedule/reschedule-plan（やり残しの組み直し案。反映はしない）
 ```
 
 ## LLM
@@ -87,10 +88,12 @@ app/schemas/tools.py          Tool 引数の検証スキーマ
 - 削除など取り消せない操作は `needs_confirmation=True`。実行せず `pending_action` を返し、
   ユーザーが承認したら `POST /chat/confirm` で実行する（引数はそこで再検証する）。
 - エージェントループは最大 8 往復（`MAX_TOOL_ITERATIONS`）。検索→空き時間→作成の連鎖に必要。
-- Tool は14個（Task 7 / Calendar 5 / Schedule 2）。増やすと LLM の選択精度が落ちるため安易に足さない。
+- Tool は15個（Task 7 / Calendar 5 / Schedule 3）。増やすと LLM の選択精度が落ちるため安易に足さない。
 - `apply_schedule` は `exposed=False`。承認後の実行専用で LLM には見せない。
 - **スケジュールの制約（何時〜何時に入れてよいか、土日を除くか）は Backend が持つ**
   （`ScheduleConstraints` / `SCHEDULE_DAY_START_HOUR`）。LLM に決めさせない。
+- **Service が返す日時は利用者のタイムゾーンに揃える**（`astimezone`）。UTC のまま返すと
+  LLM が時差込みの数字をそのまま読み上げる。
 - 自動配置の順番は「期限が近い → 優先度が高い → 所要時間が長い」、1日6時間まで。
   置けなかったタスクは理由つきで返す。提案の段階では**予定を作らない**。
 - `inline_refs` は JSON Schema の注釈 `title` を落とすが、`properties` の中の
@@ -168,3 +171,4 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 11 空き時間検索（find_free_time）
 - [x] Phase 12 自動スケジューリング（提案 → 承認 → 登録）
 - [x] Phase 13 タスク分解（create_subtasks / tasks.parent_task_id）
+- [x] Phase 14 未完了タスクの再配置（reschedule_unfinished）

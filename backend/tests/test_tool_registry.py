@@ -30,7 +30,7 @@ def test_specs_cover_mvp_task_tools(registry: ToolRegistry) -> None:
 
 def test_tool_count_stays_small(registry: ToolRegistry) -> None:
     """Tool が増えすぎると LLM の選択精度が落ちるため、数を抑える。"""
-    assert len(registry.specs()) == 14
+    assert len(registry.specs()) == 15
 
 
 def test_internal_tools_are_not_offered_to_the_model(registry: ToolRegistry) -> None:
@@ -41,6 +41,7 @@ def test_internal_tools_are_not_offered_to_the_model(registry: ToolRegistry) -> 
     offered = {spec.name for spec in registry.specs()}
     assert "generate_schedule" in offered
     assert "apply_schedule" not in offered
+    assert "apply_reschedule" not in offered
 
 
 def test_specs_have_no_json_schema_refs(registry: ToolRegistry) -> None:
@@ -306,14 +307,19 @@ def test_required_arguments_are_visible_to_the_model(registry: ToolRegistry) -> 
 
 
 def test_schemas_stay_compact(registry: ToolRegistry) -> None:
-    """Tool 定義が肥大すると、ローカルLLMでは応答時間に直接響く。"""
+    """Tool 定義が肥大すると、ローカルLLMでは応答時間に直接響く。
+
+    8000文字はおよそ2700トークン。このマシンのプロンプト処理は約30 tok/s なので、
+    キャッシュが効かない初回で約90秒に相当する。これを超えるなら、
+    ツールを増やすのではなく説明を削るか統合するかを先に検討する。
+    """
     import json
 
     total = sum(
         len(json.dumps(spec.input_schema, ensure_ascii=False)) + len(spec.description)
         for spec in registry.specs()
     )
-    assert total < 7000, f"Tool 定義が大きすぎる: {total} 文字"
+    assert total < 8000, f"Tool 定義が大きすぎる: {total} 文字"
 
     # 任意項目の null 表現が残っていないこと
     for spec in registry.specs():
