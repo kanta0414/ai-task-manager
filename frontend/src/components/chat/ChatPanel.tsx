@@ -119,10 +119,12 @@ export function ChatPanel() {
 
   // Enter で送信、Shift+Enter で改行
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void submit(input);
-    }
+    if (event.key !== "Enter" || event.shiftKey) return;
+    // 日本語入力の変換確定にも Enter を使うため、変換中は送信しない
+    if (event.nativeEvent.isComposing) return;
+
+    event.preventDefault();
+    void submit(input);
   };
 
   return (
