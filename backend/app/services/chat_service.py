@@ -13,8 +13,11 @@ from app.services.tool_registry import PendingAction, ToolRegistry
 logger = logging.getLogger(__name__)
 
 WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
-# ツール呼び出しの往復が無限に続かないようにする
-MAX_TOOL_ITERATIONS = 5
+# ツール呼び出しの往復が無限に続かないようにする。
+# 「今週締切のタスクを調べて空き時間に入れて」のような連鎖は
+# search_tasks → search_events → find_free_time → create_event と4段になるため、
+# 最後の返答分を含めて少し余裕を持たせる。
+MAX_TOOL_ITERATIONS = 8
 
 
 @dataclass

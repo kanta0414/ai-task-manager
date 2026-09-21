@@ -64,6 +64,7 @@ POST   /events             GET /events（from/to/keyword/task_id/order/limit/off
 GET    /events/{id}        PATCH /events/{id}     DELETE /events/{id}
 POST   /chat（conversation_id 省略で新規会話）   POST /chat/confirm   GET /chat/status
 GET    /conversations      GET /conversations/{id}    DELETE /conversations/{id}
+GET    /schedule/free-time（period_start/period_end/minutes_needed/exclude_weekends）
 ```
 
 ## LLM
@@ -84,8 +85,10 @@ app/schemas/tools.py          Tool 引数の検証スキーマ
 - 引数は Pydantic で検証し、不正なら例外にせず `{"error": ...}` を LLM に返して修正させる。
 - 削除など取り消せない操作は `needs_confirmation=True`。実行せず `pending_action` を返し、
   ユーザーが承認したら `POST /chat/confirm` で実行する（引数はそこで再検証する）。
-- エージェントループは最大 5 往復（`MAX_TOOL_ITERATIONS`）。
-- Tool は MVP では11個（Task 6 / Calendar 5）。増やすと LLM の選択精度が落ちるため安易に足さない。
+- エージェントループは最大 8 往復（`MAX_TOOL_ITERATIONS`）。検索→空き時間→作成の連鎖に必要。
+- Tool は12個（Task 6 / Calendar 5 / Schedule 1）。増やすと LLM の選択精度が落ちるため安易に足さない。
+- **スケジュールの制約（何時〜何時に入れてよいか、土日を除くか）は Backend が持つ**
+  （`ScheduleConstraints` / `SCHEDULE_DAY_START_HOUR`）。LLM に決めさせない。
 - `inline_refs` は JSON Schema の注釈 `title` を落とすが、`properties` の中の
   プロパティ名 `title` は残す（落とすと LLM から引数が見えなくなる）。
 
@@ -157,4 +160,6 @@ src/components/ tasks/(TaskBoard,TaskItem,TaskForm,TaskFilters)
 - [x] Phase 5 LLM基盤（Provider抽象化 / POST /chat / AIチャットUI）※実LLM未接続
 - [x] Phase 6 Tool Calling（Task 6種 + Calendar 5種 + 確認フロー）※実LLM未接続
 - [x] Phase 9 会話コンテキスト（conversations / messages にDB保存）
-- [ ] Phase 10-12 複数Tool連携・空き時間・自動スケジューリング
+- [x] Phase 10 複数Tool連携（エージェントループで連鎖実行）
+- [x] Phase 11 空き時間検索（find_free_time）
+- [ ] Phase 12 自動スケジューリング

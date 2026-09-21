@@ -209,15 +209,55 @@ def test_tool_loop_has_an_upper_bound(client: TestClient) -> None:
     """ツール呼び出しが止まらない場合も必ず終了する。"""
     endless = [
         reply("", ToolCall(id=f"c{i}", name="search_tasks", arguments={}))
-        for i in range(10)
+        for i in range(20)
     ]
     provider = FakeProvider(endless)
     use_provider(provider)
 
     body = client.post("/chat", json={"message": "延々と検索して"}).json()
 
-    assert len(provider.calls) == 5
+    assert len(provider.calls) == 8
     assert "完了できませんでした" in body["reply"]
+
+
+def test_tools_can_be_chained_across_turns(client: TestClient) -> None:
+    """検索 → 結果を見て作成、のように別のツールへ繋げられること（要件 Phase 10）。"""
+    task = client.post("/tasks", json={"title": "企業研究"}).json()
+    provider = FakeProvider(
+        [
+            reply("", ToolCall(id="c1", name="search_tasks", arguments={"keyword": "企業研究"})),
+            reply(
+                "",
+                ToolCall(
+                    id="c2",
+                    name="create_event",
+                    arguments={
+                        "title": "企業研究",
+                        "start_at": "2026-09-22T14:00",
+                        "end_at": "2026-09-22T16:00",
+                        "task_id": task["id"],
+                    },
+                ),
+            ),
+            reply("企業研究の作業時間を9/22の14時から確保しました。"),
+        ]
+    )
+    use_provider(provider)
+
+    body = client.post(
+        "/chat", json={"message": "企業研究のタスクに明日の午後2時間あてて"}
+    ).json()
+
+    assert body["executed_tools"] == ["search_tasks", "create_event"]
+    assert body["mutated"] is True
+
+    # 2回目の呼び出しには1回目の検索結果が渡っている
+    second_call_roles = [m.role for m in provider.calls[1]]
+    assert second_call_roles == ["user", "assistant", "tool"]
+    assert "企業研究" in provider.calls[1][-1].content
+
+    events = client.get("/events", params={"task_id": task["id"]}).json()
+    assert len(events) == 1
 
 
 # --------------------------------------------------------------- 確認フロー

@@ -29,8 +29,8 @@ def test_specs_cover_mvp_task_tools(registry: ToolRegistry) -> None:
 
 
 def test_tool_count_stays_small(registry: ToolRegistry) -> None:
-    """Tool が増えすぎると LLM の選択精度が落ちるため、MVP では11個に抑える。"""
-    assert len(registry.specs()) == 11
+    """Tool が増えすぎると LLM の選択精度が落ちるため、数を抑える。"""
+    assert len(registry.specs()) == 12
 
 
 def test_specs_have_no_json_schema_refs(registry: ToolRegistry) -> None:
@@ -319,3 +319,71 @@ def test_not_found_error_tells_the_model_how_to_recover(registry: ToolRegistry) 
 
     event_outcome = registry.execute(call("update_event", event_id=1, title="x"))
     assert "search_events" in event_outcome.content["next_step"]
+
+
+# --------------------------------------------------------- 空き時間検索の Tool
+
+
+def test_find_free_time_tool(registry: ToolRegistry) -> None:
+    registry.execute(
+        call(
+            "create_event",
+            title="会議",
+            start_at="2026-09-22T13:00",
+            end_at="2026-09-22T15:00",
+        )
+    )
+
+    outcome = registry.execute(
+        call(
+            "find_free_time",
+            period_start="2026-09-22T00:00",
+            period_end="2026-09-23T00:00",
+            minutes_needed=60,
+        )
+    )
+
+    assert outcome.is_error is False
+    assert outcome.mutated is False
+    assert outcome.content["count"] == 2
+    assert [s["start_at"][11:16] for s in outcome.content["slots"]] == ["09:00", "15:00"]
+    # どのルールで探したかを LLM に伝える
+    assert "9:00" in outcome.content["rule"]
+
+
+def test_find_free_time_respects_backend_rules(registry: ToolRegistry) -> None:
+    """LLM が深夜を指定しても、Backend の稼働時間ルールが優先される。"""
+    outcome = registry.execute(
+        call(
+            "find_free_time",
+            period_start="2026-09-22T00:00",
+            period_end="2026-09-22T08:00",
+            minutes_needed=30,
+        )
+    )
+    assert outcome.content["count"] == 0
+
+
+def test_find_free_time_rejects_too_long_period(registry: ToolRegistry) -> None:
+    outcome = registry.execute(
+        call(
+            "find_free_time",
+            period_start="2026-09-01T00:00",
+            period_end="2026-11-01T00:00",
+            minutes_needed=60,
+        )
+    )
+    assert outcome.is_error is True
+    assert "31日" in outcome.content["error"]
+
+
+def test_find_free_time_description_guides_whole_day_search(
+    registry: ToolRegistry,
+) -> None:
+    """一日全体を探す指定方法を説明に含める。
+
+    小型モデルは period_start に現在時刻を入れてしまい、
+    午前中の空きを取りこぼすことがあったため。
+    """
+    spec = next(s for s in registry.specs() if s.name == "find_free_time")
+    assert "00:00" in spec.input_schema["properties"]["period_start"]["description"]

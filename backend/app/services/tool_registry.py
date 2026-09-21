@@ -15,6 +15,7 @@ from app.schemas.event import EventCreate, EventSearchParams, EventUpdate
 from app.schemas.task import TaskCreate, TaskSearchParams, TaskUpdate
 from app.schemas.tools import (
     CompleteTaskArgs,
+    FindFreeTimeArgs,
     CreateEventArgs,
     CreateTaskArgs,
     DeleteEventArgs,
@@ -27,7 +28,15 @@ from app.schemas.tools import (
     UpdateTaskArgs,
 )
 from app.services.event_service import EventService
+from app.services.schedule_service import (
+    ScheduleConstraints,
+    ScheduleService,
+    default_constraints,
+)
 from app.services.task_service import TaskService
+
+#: LLM に返す空き時間候補の最大件数
+MAX_FREE_SLOTS = 10
 
 
 @dataclass(frozen=True)
@@ -98,6 +107,7 @@ class ToolRegistry:
         self.user = user
         self.tasks = TaskService(db)
         self.events = EventService(db)
+        self.schedule = ScheduleService(db)
         self._definitions = self._build_definitions()
 
     # ------------------------------------------------------------------ 定義
@@ -177,6 +187,16 @@ class ToolRegistry:
                 ),
                 args_model=UpdateEventArgs,
                 handler=self._update_event,
+            ),
+            "find_free_time": ToolDefinition(
+                description=(
+                    "指定した期間の空き時間を探す。"
+                    "「2時間空いている時間を探して」や、予定を入れる前に"
+                    "いつが空いているか確認したいときに使う。"
+                    "いつ空いているかを推測せず、必ずこのツールの結果を使うこと。"
+                ),
+                args_model=FindFreeTimeArgs,
+                handler=self._find_free_time,
             ),
             "delete_event": ToolDefinition(
                 description="予定を削除する。取り消せないためユーザーの確認が必要。",
@@ -357,4 +377,38 @@ class ToolRegistry:
         self.events.delete(self.user, args.event_id)
         return ToolOutcome(
             {"deleted": True, "id": args.event_id, "title": title}, mutated=True
+        )
+
+    # ------------------------------------------------------- スケジュールの Tool
+
+    def _find_free_time(self, args: BaseModel) -> ToolOutcome:
+        assert isinstance(args, FindFreeTimeArgs)
+        defaults = default_constraints()
+        constraints = ScheduleConstraints(
+            day_start_hour=defaults.day_start_hour,
+            day_end_hour=defaults.day_end_hour,
+            exclude_weekends=args.exclude_weekends,
+        )
+        slots = self.schedule.find_free_time(
+            self.user,
+            period_start=args.period_start,
+            period_end=args.period_end,
+            minutes_needed=args.minutes_needed,
+            constraints=constraints,
+        )
+        # 候補が多すぎると応答トークンが膨らむので先頭だけ返す
+        shown = slots[:MAX_FREE_SLOTS]
+        return ToolOutcome(
+            {
+                "rule": constraints.describe(),
+                "count": len(slots),
+                "slots": [
+                    {
+                        "start_at": slot.start_at.isoformat(),
+                        "end_at": slot.end_at.isoformat(),
+                        "minutes": slot.minutes,
+                    }
+                    for slot in shown
+                ],
+            }
         )

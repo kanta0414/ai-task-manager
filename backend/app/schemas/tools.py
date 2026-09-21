@@ -110,3 +110,16 @@ class UpdateEventArgs(BaseModel):
 
 class DeleteEventArgs(BaseModel):
     event_id: int = Field(gt=0, description="削除する予定のID")
+
+
+class FindFreeTimeArgs(BaseModel):
+    period_start: AwareDatetime = Field(
+        description="探す期間の開始日時。その日全体を探すなら 00:00 を指定する（例: 2026-09-30T00:00）"
+    )
+    period_end: AwareDatetime = Field(
+        description="探す期間の終了日時。その日全体なら翌日の 00:00 を指定する"
+    )
+    minutes_needed: int = Field(
+        gt=0, le=1440, description="確保したい時間（分）"
+    )
+    exclude_weekends: bool = Field(default=False, description="土日を除くかどうか")
