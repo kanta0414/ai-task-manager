@@ -13,7 +13,7 @@ Claude Code はこのファイルを毎回読み込む。実装前に必ず `doc
 ```
 backend/   FastAPI + SQLAlchemy + Alembic（レイヤード構成）
 frontend/  Next.js (App Router) + TypeScript + Tailwind
-docs/      要件定義書・開発手順・API仕様・セキュリティ・Claude Code 開発フロー
+docs/      要件定義書・開発手順・API仕様・セキュリティ
 ```
 
 ## アーキテクチャの絶対ルール

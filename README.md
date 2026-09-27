@@ -353,7 +353,6 @@ Backend のテストは、CRUD だけでなく以下を含む。
 - [Google カレンダー連携](docs/Google連携.md) — 設定手順
 - [要件定義書](docs/要件定義書.md)
 - [開発手順](docs/開発手順.md)
-- [Claude Code での実装手順](docs/claude-code-開発フロー.md)
 
 ---
 
